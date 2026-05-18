@@ -50,3 +50,32 @@ Mirror of the master tracking issue. The GitHub issue (#1) is the source of trut
 | M4 — Integrations | 12 |
 | M5 — Differentiators | 11 |
 | **Total** | **99** |
+
+## M1 status
+
+M1 (MVP Backend) is **complete pending #107**. The full happy path —
+register, login, browse, bib search, biometric consent, selfie search,
+cart, checkout, Stripe webhook, digital fulfillment, signed download,
+webhook replay idempotency, and consent revocation — is covered by:
+
+- Automated integration test: `apps/api/test/integration.test.ts` (mocked
+  Postgres / Stripe / S3 / Qdrant / inference / queue).
+- Manual smoke runbook: `docs/integration-smoke.md` (real dev stack via
+  `docker-compose.dev.yml` + `pnpm seed`).
+
+Explicit gaps tracked for resolution under #107 (testcontainers):
+
+- Real-DB integration deferred — the mock DB shim approximates drizzle
+  semantics but does not enforce FKs, unique constraints (other than the
+  webhook events PK), or projection across joins faithfully.
+- Selfie-bytes-never-persisted assertion deferred — requires filesystem
+  and S3 observability not available in the mock layer.
+- Full `buildServer()` wiring not exercised end-to-end in the automated
+  suite — route-level plugins are registered individually rather than via
+  the production composition root.
+- Real argon2 + JWT signing on `/v1/auth/*` not exercised in the
+  automated suite.
+- Real Qdrant collection delete on consent revocation not exercised.
+
+When #107 lands, the manual runbook becomes the executable contract the
+testcontainers-backed suite runs against ephemeral containers.
