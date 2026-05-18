@@ -257,6 +257,38 @@ export const fulfillments = app.table(
   }),
 );
 
+// ---------- stripe_webhook_events ----------
+// Append-only log of received Stripe webhook events. The Stripe event id is
+// used as the natural primary key so a replayed delivery is a duplicate
+// insert — idempotency falls out of the schema instead of requiring a
+// separate lookup-then-insert race window. Processing pipeline:
+//   1. INSERT row (id, type, payload). Conflict => already seen, return.
+//   2. Dispatch downstream side effects.
+//   3. UPDATE processed_at + result ('success' | 'ignored' | 'error').
+
+export const stripeWebhookEvents = app.table(
+  'stripe_webhook_events',
+  {
+    // Stripe event id (evt_*). Natural PK gives idempotency for free.
+    id: text('id').primaryKey(),
+    type: text('type').notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .default(sql`now()`),
+    processedAt: timestamp('processed_at', { withTimezone: true, mode: 'date' }),
+    payloadJsonb: jsonb('payload_jsonb').notNull(),
+    // 'success' | 'ignored' | 'error'. Null while still processing.
+    result: text('result'),
+  },
+  (table) => ({
+    typeIdx: index('stripe_webhook_events_type_idx').on(table.type, table.receivedAt),
+    // Worker sweep: find rows that crashed mid-processing.
+    unprocessedIdx: index('stripe_webhook_events_unprocessed_idx')
+      .on(table.receivedAt)
+      .where(sql`${table.processedAt} is null`),
+  }),
+);
+
 // ---------- Grouped export ----------
 
 export const tables = {
@@ -265,4 +297,5 @@ export const tables = {
   orders,
   orderItems,
   fulfillments,
+  stripeWebhookEvents,
 };

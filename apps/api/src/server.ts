@@ -9,12 +9,15 @@ import adminAuditRoutes from './routes/admin/audit.js';
 import authPasswordlessRoutes from './routes/auth-passwordless.js';
 import authRoutes from './routes/auth.js';
 import cartRoutes from './routes/cart.js';
+import checkoutRoutes from './routes/checkout.js';
 import consentRoutes from './routes/consents.js';
+import downloadsRoutes from './routes/downloads.js';
 import eventsRoutes from './routes/events.js';
 import productsRoutes from './routes/products.js';
 import searchFaceRoutes from './routes/search-face.js';
 import searchRoutes from './routes/search.js';
 import uploadsRoutes from './routes/uploads.js';
+import stripeWebhookRoutes from './routes/webhooks-stripe.js';
 import { seedDefaultLicenseTiers } from './services/products.js';
 
 export const buildServer = async (): Promise<FastifyInstance> => {
@@ -75,6 +78,10 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   // their own consent/event gating, not RBAC).
   await app.register(consentRoutes);
   await app.register(searchFaceRoutes);
+  // F1.29 / F1.30 / F1.31 — Stripe checkout, webhook receiver, download delivery.
+  await app.register(checkoutRoutes);
+  await app.register(stripeWebhookRoutes);
+  await app.register(downloadsRoutes);
   await app.register(adminAuditRoutes);
 
   app.get('/health', async () => ({ status: 'ok' }));

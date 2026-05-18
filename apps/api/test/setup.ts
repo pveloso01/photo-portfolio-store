@@ -16,3 +16,6 @@ process.env.S3_BUCKET_ORIGINALS = process.env.S3_BUCKET_ORIGINALS ?? 'photo-orig
 process.env.S3_BUCKET_DERIVATIVES = process.env.S3_BUCKET_DERIVATIVES ?? 'photo-derivatives';
 process.env.S3_PUBLIC_BASE_URL =
   process.env.S3_PUBLIC_BASE_URL ?? 'http://localhost:9000/photo-derivatives';
+process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? 'sk_test_dummy_for_tests';
+process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_test_dummy';
+process.env.IP_HASH_SALT = process.env.IP_HASH_SALT ?? 'test-ip-hash-salt';

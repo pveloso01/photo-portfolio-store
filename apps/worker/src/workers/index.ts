@@ -9,9 +9,11 @@ import { type Worker as BullWorker, Worker } from 'bullmq';
 import { logger } from '../lib/logger.js';
 import { getRedis } from '../lib/redis.js';
 import { FACE_QUEUE_NAME } from '../queues/face.js';
+import { FULFILLMENT_QUEUE_NAME } from '../queues/fulfillment.js';
 import { QUEUE_NAMES } from '../queues/index.js';
 import { derivativesProcessor } from './derivatives.js';
 import { faceProcessor } from './face.js';
+import { fulfillmentDigitalProcessor } from './fulfillment-digital.js';
 import { ingestProcessor } from './ingest.js';
 import { watermarkProcessor } from './watermark.js';
 
@@ -20,6 +22,7 @@ export interface WorkerSet {
   derivatives: BullWorker;
   watermark: BullWorker;
   face: BullWorker;
+  fulfillmentDigital: BullWorker;
 }
 
 const attachLifecycle = (worker: BullWorker, name: string): void => {
@@ -56,14 +59,20 @@ export const startWorkers = (): WorkerSet => {
     connection,
     concurrency: 2,
   });
+  // F1.31 — digital fulfillment. Concurrency 3 keeps zip generation bounded.
+  const fulfillmentDigital = new Worker(FULFILLMENT_QUEUE_NAME, fulfillmentDigitalProcessor, {
+    connection,
+    concurrency: 3,
+  });
 
   attachLifecycle(ingest, 'ingest');
   attachLifecycle(derivatives, 'derivatives');
   attachLifecycle(watermark, 'watermark');
   attachLifecycle(face, 'face');
+  attachLifecycle(fulfillmentDigital, 'fulfillment-digital');
 
-  logger.info('workers started: ingest, derivatives, watermark, face');
-  return { ingest, derivatives, watermark, face };
+  logger.info('workers started: ingest, derivatives, watermark, face, fulfillment-digital');
+  return { ingest, derivatives, watermark, face, fulfillmentDigital };
 };
 
 export const stopWorkers = async (set: WorkerSet): Promise<void> => {
@@ -72,5 +81,6 @@ export const stopWorkers = async (set: WorkerSet): Promise<void> => {
     set.derivatives.close(),
     set.watermark.close(),
     set.face.close(),
+    set.fulfillmentDigital.close(),
   ]);
 };
