@@ -1,0 +1,33 @@
+name: Chore
+description: Infrastructure, tooling, CI, or scaffolding work.
+title: "[CHORE] "
+labels: ["type:chore"]
+body:
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why this work is needed.
+    validations:
+      required: true
+  - type: textarea
+    id: parent
+    attributes:
+      label: Parent epic
+      description: Link to the parent epic.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What state the repo / system will be in when this is done.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Concrete commands or checks that prove completion.
+    validations:
+      required: true

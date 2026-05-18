@@ -1,0 +1,38 @@
+name: Bug
+description: A defect in existing functionality.
+title: "[BUG] "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "P0 - data loss / security / outage"
+        - "P1 - critical user flow broken"
+        - "P2 - degraded experience"
+        - "P3 - minor"
+    validations:
+      required: true

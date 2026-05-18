@@ -1,0 +1,74 @@
+name: Feature
+description: Net-new functionality with acceptance criteria and quality gates.
+title: "[FEAT] "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One paragraph describing what is being built and why.
+    validations:
+      required: true
+  - type: textarea
+    id: parent
+    attributes:
+      label: Parent epic
+      description: Link to the parent epic (e.g. "Part of #3").
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use Given / When / Then. Every observable behavior must be covered.
+      value: |
+        - Given ...,
+          When ...,
+          Then ...
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: API surface
+      description: Endpoints / payloads / status codes / errors. Omit if not applicable.
+  - type: textarea
+    id: schema
+    attributes:
+      label: Schema changes
+      description: New tables, columns, indexes. Forward + rollback migration notes.
+  - type: textarea
+    id: quality_gates
+    attributes:
+      label: Quality gates
+      description: In addition to the universal quality gates.
+      value: |
+        Universal gates (every PR):
+        - Tests: unit + integration, >=80% coverage on changed lines
+        - Lint + format clean
+        - Type safety: tsc / pyright clean
+        - OpenAPI updated + validated
+        - Migrations: forward + rollback tested
+        - Security: secret scan + dep audit clean
+        - Observability: traces + metrics emitted
+        - Compliance audit log entry (if PII/biometric)
+        - Docs updated
+        - Performance budget honored
+
+        Feature-specific:
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: test_plan
+    attributes:
+      label: Test plan
+      description: How will this be verified manually + in CI?
+    validations:
+      required: true
+  - type: textarea
+    id: oos
+    attributes:
+      label: Out of scope
+      description: Explicitly state what this feature does NOT cover.
