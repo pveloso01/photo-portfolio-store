@@ -1,5 +1,6 @@
-import { buildServer } from './server.js';
+import './instrument.js';
 import { env } from './env.js';
+import { buildServer } from './server.js';
 
 const main = async (): Promise<void> => {
   const server = await buildServer();

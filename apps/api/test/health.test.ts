@@ -1,5 +1,5 @@
-import { describe, expect, it, afterAll, beforeAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildServer } from '../src/server.js';
 
 describe('GET /health', () => {

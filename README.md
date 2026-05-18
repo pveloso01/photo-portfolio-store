@@ -34,6 +34,16 @@ To be decided. Candidates under evaluation:
 
 Inspiration sources tracked separately. See `docs/inspiration.md` (TBD).
 
+## Local development
+
+Boot the local infrastructure stack (Postgres, Redis, MinIO, Qdrant, Mailpit):
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+See [`docs/local-dev.md`](docs/local-dev.md) for prerequisites, env setup, service verification, and app boot commands.
+
 ## License
 
 TBD.

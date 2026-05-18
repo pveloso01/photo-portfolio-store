@@ -20,11 +20,21 @@
     "py:dev": "cd apps/inference && uv run uvicorn app.main:app --reload --port 8000",
     "py:test": "cd apps/inference && uv run pytest",
     "py:lint": "cd apps/inference && uv run ruff check .",
-    "py:format": "cd apps/inference && uv run ruff format ."
+    "py:format": "cd apps/inference && uv run ruff format .",
+    "codegen": "pnpm --filter @pkg/api-types codegen",
+    "prepare": "simple-git-hooks"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "lint-staged": "^15.2.10",
+    "simple-git-hooks": "^2.11.1",
     "turbo": "^2.3.0",
     "typescript": "^5.7.2"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec biome check --diagnostic-level=error .",
+    "commit-msg": "pnpm exec commitlint --edit $1"
   }
 }

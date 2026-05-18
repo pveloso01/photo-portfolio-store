@@ -1,5 +1,7 @@
-import pino, { type LoggerOptions } from 'pino';
+import './instrument.js';
 import { coreEnvSchema, parseEnv } from '@pkg/env';
+import * as Sentry from '@sentry/node';
+import pino, { type LoggerOptions } from 'pino';
 
 const env = parseEnv(coreEnvSchema);
 
@@ -8,7 +10,10 @@ const loggerOptions: LoggerOptions =
   env.NODE_ENV === 'development'
     ? {
         ...baseOptions,
-        transport: { target: 'pino-pretty', options: { translateTime: 'SYS:HH:MM:ss.l', ignore: 'pid,hostname' } },
+        transport: {
+          target: 'pino-pretty',
+          options: { translateTime: 'SYS:HH:MM:ss.l', ignore: 'pid,hostname' },
+        },
       }
     : baseOptions;
 
@@ -23,6 +28,16 @@ const shutdown = (signal: string): void => {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+process.on('uncaughtException', (error) => {
+  Sentry.captureException(error);
+  throw error;
+});
+
+process.on('unhandledRejection', (reason) => {
+  Sentry.captureException(reason);
+  throw reason;
+});
 
 setInterval(() => {
   // heartbeat will be replaced by BullMQ workers in M1

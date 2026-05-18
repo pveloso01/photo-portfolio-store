@@ -1,0 +1,108 @@
+# =============================================================================
+# docker-compose.dev.yml
+# -----------------------------------------------------------------------------
+# Local development infrastructure ONLY. Not for production use.
+# Production manifests (k8s, fly, render, etc.) will live elsewhere and are
+# tracked by a later issue (TBD). Do not point real deployments at this file.
+#
+# Conventions:
+#   - All persistent data lives in named volumes for cross-platform parity
+#     (Windows + macOS + Linux). No host bind mounts.
+#   - Single shared network: photo-dev.
+#   - Credentials are dev-only defaults and must never be reused in prod.
+# =============================================================================
+
+networks:
+  photo-dev:
+    name: photo-dev
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  qdrant-data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: photo-postgres
+    restart: unless-stopped
+    networks: [photo-dev]
+    environment:
+      POSTGRES_USER: photo
+      POSTGRES_PASSWORD: photo
+      POSTGRES_DB: photo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photo -d photo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: photo-redis
+    restart: unless-stopped
+    networks: [photo-dev]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: photo-minio
+    restart: unless-stopped
+    networks: [photo-dev]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: photo-minio-init
+    networks: [photo-dev]
+    depends_on:
+      minio:
+        condition: service_started
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+      until (mc alias set local http://minio:9000 minioadmin minioadmin) do echo 'waiting for minio'; sleep 2; done;
+      mc mb -p local/photo-originals local/photo-derivatives;
+      mc anonymous set download local/photo-derivatives;
+      "
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: photo-qdrant
+    restart: unless-stopped
+    networks: [photo-dev]
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: photo-mailpit
+    restart: unless-stopped
+    networks: [photo-dev]
+    ports:
+      - "1025:1025"
+      - "8025:8025"

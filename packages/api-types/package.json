@@ -14,11 +14,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "biome lint src"
+    "lint": "biome lint src",
+    "codegen": "openapi-typescript ../../openapi.yaml -o src/generated.ts",
+    "codegen:check": "node scripts/check-drift.mjs"
   },
   "devDependencies": {
     "@pkg/tsconfig": "workspace:*",
     "@types/node": "^22.10.1",
+    "openapi-typescript": "^7.4.4",
     "typescript": "^5.7.2"
   }
 }

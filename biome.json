@@ -15,7 +15,10 @@
       "**/coverage",
       "**/.venv",
       "**/__pycache__",
-      "apps/inference/**"
+      "apps/inference/**",
+      "packages/api-types/src/generated.ts",
+      "pnpm-lock.yaml",
+      "**/uv.lock"
     ]
   },
   "organizeImports": {
@@ -37,6 +40,9 @@
       "suspicious": {
         "noExplicitAny": "error",
         "noConsoleLog": "off"
+      },
+      "performance": {
+        "noDelete": "off"
       }
     }
   },

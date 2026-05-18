@@ -1,5 +1,6 @@
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import sensible from '@fastify/sensible';
+import * as Sentry from '@sentry/node';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
 export const buildServer = async (): Promise<FastifyInstance> => {
   const logLevel = process.env.LOG_LEVEL ?? 'info';
@@ -24,6 +25,10 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   const app = Fastify(opts);
 
   await app.register(sensible);
+
+  if (process.env.SENTRY_DSN) {
+    Sentry.setupFastifyErrorHandler(app);
+  }
 
   app.get('/health', async () => ({ status: 'ok' }));
   app.get('/', async () => ({ name: 'photo-portfolio-store api', ok: true }));

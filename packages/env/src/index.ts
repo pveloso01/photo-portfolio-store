@@ -6,11 +6,22 @@ export const coreEnvSchema = z.object({
   APP_BASE_URL: z.string().url().default('http://localhost:3000'),
   API_BASE_URL: z.string().url().default('http://localhost:4000'),
   PORT: z.coerce.number().int().positive().default(4000),
+  OTEL_SERVICE_NAME: z.string().optional(),
 });
 
 export type CoreEnv = z.infer<typeof coreEnvSchema>;
 
-export const parseEnv = <T extends z.ZodTypeAny>(schema: T, source: NodeJS.ProcessEnv = process.env): z.infer<T> => {
+export const sentryEnvSchema = z.object({
+  SENTRY_DSN: z.string().optional(),
+  SENTRY_RELEASE: z.string().optional(),
+});
+
+export type SentryEnv = z.infer<typeof sentryEnvSchema>;
+
+export const parseEnv = <T extends z.ZodTypeAny>(
+  schema: T,
+  source: NodeJS.ProcessEnv = process.env,
+): z.infer<T> => {
   const result = schema.safeParse(source);
   if (!result.success) {
     const issues = result.error.issues
