@@ -1,0 +1,30 @@
+# Code owners for photo-portfolio-store.
+# Order matters: later patterns take precedence over earlier ones.
+# See https://docs.github.com/articles/about-code-owners
+
+# Default owner for everything
+*                                       @pveloso01
+
+# --- Repo / infra ---
+.github/                                @pveloso01
+docs/                                   @pveloso01
+docker-compose*.yml                     @pveloso01
+turbo.json                              @pveloso01
+pnpm-workspace.yaml                     @pveloso01
+
+# --- Bounded contexts ---
+# HTTP API: Fastify routes, auth, RBAC, request validation
+/apps/api/                              @pveloso01
+
+# Worker: BullMQ consumers for ingest, derivatives, face/bib pipelines
+/apps/worker/                           @pveloso01
+
+# Inference: Python FastAPI service running InsightFace / OCR / quality
+/apps/inference/                        @pveloso01
+
+# Shared TS packages
+/packages/db/                           @pveloso01
+/packages/api-types/                    @pveloso01
+/packages/shared/                       @pveloso01
+/packages/env/                          @pveloso01
+/packages/tsconfig/                     @pveloso01

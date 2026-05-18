@@ -1,0 +1,30 @@
+{
+  "name": "photo-portfolio-store",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Photographer portfolio + print storefront with face-recognition search",
+  "engines": {
+    "node": ">=20.18",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "biome lint .",
+    "lint:fix": "biome check --apply .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "test": "turbo run test",
+    "py:dev": "cd apps/inference && uv run uvicorn app.main:app --reload --port 8000",
+    "py:test": "cd apps/inference && uv run pytest",
+    "py:lint": "cd apps/inference && uv run ruff check .",
+    "py:format": "cd apps/inference && uv run ruff format ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.2"
+  }
+}
