@@ -6,9 +6,12 @@ import rbacPlugin from './auth/rbac.js';
 import { db } from './lib/db.js';
 import swaggerPlugin from './plugins/swagger.js';
 import adminAuditRoutes from './routes/admin/audit.js';
+import authPasswordlessRoutes from './routes/auth-passwordless.js';
 import authRoutes from './routes/auth.js';
+import cartRoutes from './routes/cart.js';
 import eventsRoutes from './routes/events.js';
 import productsRoutes from './routes/products.js';
+import searchRoutes from './routes/search.js';
 import uploadsRoutes from './routes/uploads.js';
 import { seedDefaultLicenseTiers } from './services/products.js';
 
@@ -59,9 +62,12 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   // Routes
   await app.register(authRoutes);
+  await app.register(authPasswordlessRoutes);
   await app.register(eventsRoutes);
   await app.register(productsRoutes);
   await app.register(uploadsRoutes);
+  await app.register(searchRoutes);
+  await app.register(cartRoutes);
   await app.register(adminAuditRoutes);
 
   app.get('/health', async () => ({ status: 'ok' }));

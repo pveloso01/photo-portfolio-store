@@ -167,6 +167,29 @@ export const photographerProfiles = app.table('photographer_profiles', {
     .default(sql`now()`),
 });
 
+// ---------- magic_link_tokens ----------
+// Passwordless auth: stores sha256 hashes of short-lived magic-link tokens.
+// Plaintext token is emailed to the user; only the hash is persisted.
+
+export const magicLinkTokens = app.table(
+  'magic_link_tokens',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    emailLower: text('email_lower').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'date' }),
+    ipHash: text('ip_hash'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => ({
+    emailIdx: index('magic_link_tokens_email_idx').on(table.emailLower, table.expiresAt),
+  }),
+);
+
 // ---------- Grouped export ----------
 
 export const tables = {
@@ -175,4 +198,5 @@ export const tables = {
   sessions,
   organizationMembers,
   photographerProfiles,
+  magicLinkTokens,
 };

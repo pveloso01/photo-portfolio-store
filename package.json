@@ -17,6 +17,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test": "turbo run test",
+    "seed": "pnpm --filter @app/api tsx scripts/seed.ts",
     "py:dev": "cd apps/inference && uv run uvicorn app.main:app --reload --port 8000",
     "py:test": "cd apps/inference && uv run pytest",
     "py:lint": "cd apps/inference && uv run ruff check .",
