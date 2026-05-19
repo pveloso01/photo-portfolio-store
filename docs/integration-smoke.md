@@ -5,9 +5,11 @@ stack** (Postgres + Redis + MinIO + Qdrant via `docker-compose.dev.yml` +
 the seeded demo dataset).
 
 This runbook is the executable spec for the automated integration test at
-`apps/api/test/integration.test.ts`. When testcontainers land (issue #107)
-the steps below become the canonical assertions the automated suite runs
-against ephemeral containers.
+`apps/api/test/integration.test.ts` (mock-based, fast) and its real-infra
+counterpart `apps/api/test/m1-pipeline.integration.test.ts` which exercises
+the production `buildServer()` against ephemeral Postgres + MinIO
+testcontainers. Run the testcontainers suite with `pnpm test:integration`
+(see CONTRIBUTING.md → "Running integration tests").
 
 ## Prerequisites
 

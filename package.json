@@ -17,6 +17,8 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test": "turbo run test",
+    "test:integration": "pnpm -r --filter @app/api --filter @app/worker test:integration",
+    "test:integration:up": "docker compose -f docker-compose.dev.yml up -d postgres minio",
     "seed": "pnpm --filter @app/api tsx scripts/seed.ts",
     "py:dev": "cd apps/inference && uv run uvicorn app.main:app --reload --port 8000",
     "py:test": "cd apps/inference && uv run pytest",

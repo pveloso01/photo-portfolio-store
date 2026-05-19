@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome lint src",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "test:integration": "vitest run -c vitest.config.integration.ts --coverage"
   },
   "dependencies": {
     "@pkg/db": "workspace:*",
@@ -45,6 +46,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@pkg/test-infra": "workspace:*",
     "@pkg/tsconfig": "workspace:*",
     "@types/archiver": "^6.0.3",
     "@types/jsonwebtoken": "^9.0.7",

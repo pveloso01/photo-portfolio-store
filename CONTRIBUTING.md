@@ -105,6 +105,57 @@ Apply the label as soon as the risk is identified, not at the end of review.
 - Inspect a BullMQ queue: `pnpm --filter @app/worker queue:inspect <queue-name>`.
 - Tail dev logs across the stack: `pnpm logs`.
 
+## Running integration tests
+
+The integration suite boots ephemeral Postgres and MinIO containers via
+testcontainers and runs the API + worker code against them. It lives in
+`*.integration.test.ts` files and is excluded from the default `pnpm test`
+run.
+
+Prerequisites:
+
+- Docker daemon running and reachable. On Windows + WSL2 ensure Docker
+  Desktop is started before invoking the command.
+- The first run pulls `postgres:16-alpine` and `minio/minio:latest`
+  (~150MB combined) — subsequent runs reuse the cached images.
+
+**Windows + Git Bash known issue:** testcontainers-node cannot reach
+the Docker Desktop named pipe (`//./pipe/dockerDesktopLinuxEngine`)
+from Git Bash. Two workarounds:
+
+1. **Use the docker-compose stack** (recommended for local dev):
+   ```bash
+   docker compose -f docker-compose.dev.yml up -d postgres minio
+   INTEGRATION_REUSE_EXTERNAL=1 \
+     DATABASE_URL=postgres://photo:photo@localhost:5432/photo \
+     pnpm test:integration
+   ```
+2. **Run from WSL2** — install Node + pnpm inside WSL and run
+   `pnpm test:integration` there; the Docker socket is exposed via
+   `unix:///var/run/docker.sock` and works natively.
+
+CI (Linux runners) has no such issue and uses the default
+testcontainers path.
+
+Commands:
+
+```bash
+# Full integration suite (api + worker). ~3 min cold, ~30s warm.
+pnpm test:integration
+
+# Optional escape hatch: reuse the docker-compose dev stack instead of
+# spinning new testcontainers. Faster inner loop for local development.
+INTEGRATION_REUSE_EXTERNAL=1 \
+  DATABASE_URL=postgres://photo:photo@localhost:5432/photo \
+  pnpm test:integration
+```
+
+The unit suite (`pnpm test`) stays mock-based and runs in seconds — keep
+fast feedback loops by adding new unit tests there. Reach for the
+integration suite when an assertion depends on real SQL semantics (FK
+violations, unique constraints, projection across joins) or real
+filesystem / S3 observability.
+
 ## Getting help
 
 - Master tracker: issue #1.

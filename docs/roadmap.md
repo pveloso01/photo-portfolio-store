@@ -65,17 +65,26 @@ webhook replay idempotency, and consent revocation — is covered by:
 
 Explicit gaps tracked for resolution under #107 (testcontainers):
 
-- Real-DB integration deferred — the mock DB shim approximates drizzle
+- ~~Real-DB integration deferred — the mock DB shim approximates drizzle
   semantics but does not enforce FKs, unique constraints (other than the
-  webhook events PK), or projection across joins faithfully.
-- Selfie-bytes-never-persisted assertion deferred — requires filesystem
-  and S3 observability not available in the mock layer.
-- Full `buildServer()` wiring not exercised end-to-end in the automated
+  webhook events PK), or projection across joins faithfully.~~ **Resolved
+  by #107** — see `*.integration.test.ts` files driven by Postgres
+  testcontainers.
+- ~~Selfie-bytes-never-persisted assertion deferred — requires filesystem
+  and S3 observability not available in the mock layer.~~ **Resolved by
+  #107** — `apps/api/test/face-search.integration.test.ts` spies on
+  `S3Client.prototype.send` against a real MinIO container.
+- ~~Full `buildServer()` wiring not exercised end-to-end in the automated
   suite — route-level plugins are registered individually rather than via
-  the production composition root.
-- Real argon2 + JWT signing on `/v1/auth/*` not exercised in the
-  automated suite.
+  the production composition root.~~ **Resolved by #107** — see
+  `apps/api/test/m1-pipeline.integration.test.ts`.
+- ~~Real argon2 + JWT signing on `/v1/auth/*` not exercised in the
+  automated suite.~~ **Resolved by #107** — see
+  `apps/api/test/auth.integration.test.ts`.
 - Real Qdrant collection delete on consent revocation not exercised.
+  Qdrant container deferred as future work; the retention path is still
+  exercised against a mocked `QdrantLike` interface in
+  `apps/worker/test/retention.integration.test.ts`.
 
 When #107 lands, the manual runbook becomes the executable contract the
 testcontainers-backed suite runs against ephemeral containers.

@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome lint src",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "test:integration": "vitest run -c vitest.config.integration.ts --coverage"
   },
   "dependencies": {
     "@pkg/db": "workspace:*",
@@ -39,6 +40,7 @@
     "pino-pretty": "^13.0.0"
   },
   "devDependencies": {
+    "@pkg/test-infra": "workspace:*",
     "@pkg/tsconfig": "workspace:*",
     "@types/archiver": "^6.0.3",
     "@types/node": "^22.19.19",
