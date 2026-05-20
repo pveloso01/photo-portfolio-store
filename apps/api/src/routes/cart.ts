@@ -29,6 +29,7 @@ import { db as defaultDb } from '../lib/db.js';
 import {
   CART_TTL_MS,
   CartServiceError,
+  addBundleToCart,
   addCartItem,
   createCart,
   getCart,
@@ -47,7 +48,8 @@ const uuidSchema = z.string().uuid();
 
 const createCartBodySchema = z.object({ eventId: uuidSchema }).strict();
 
-const addItemBodySchema = z
+// Discriminated union: either a single-photo product OR a bundle.
+const addItemProductSchema = z
   .object({
     productId: uuidSchema,
     photoId: uuidSchema.optional(),
@@ -55,6 +57,15 @@ const addItemBodySchema = z
     quantity: z.number().int().min(1).max(999).optional(),
   })
   .strict();
+
+const addItemBundleSchema = z
+  .object({
+    bundleId: uuidSchema,
+    quantity: z.number().int().min(1).max(999).optional(),
+  })
+  .strict();
+
+const addItemBodySchema = addItemProductSchema.or(addItemBundleSchema);
 
 const patchItemBodySchema = z.object({ quantity: z.number().int() }).strict();
 
@@ -220,12 +231,23 @@ const cartRoutes = async (app: FastifyInstance, opts: CartRoutesOptions = {}): P
     }
     try {
       const resolved = await getCart(db, token);
-      await addCartItem(db, resolved.cart.id, {
-        productId: body.data.productId,
-        photoId: body.data.photoId,
-        licenseTierId: body.data.licenseTierId,
-        quantity: body.data.quantity,
-      });
+
+      if ('bundleId' in body.data) {
+        // Bundle path.
+        await addBundleToCart(db, resolved.cart.id, {
+          bundleId: body.data.bundleId,
+          quantity: body.data.quantity,
+        });
+      } else {
+        // Single-photo product path.
+        await addCartItem(db, resolved.cart.id, {
+          productId: body.data.productId,
+          photoId: body.data.photoId,
+          licenseTierId: body.data.licenseTierId,
+          quantity: body.data.quantity,
+        });
+      }
+
       const fresh = await getCart(db, token);
       return reply.code(201).send({ cart: fresh.cart, items: fresh.items });
     } catch (err) {
@@ -237,6 +259,9 @@ const cartRoutes = async (app: FastifyInstance, opts: CartRoutesOptions = {}): P
         if (err.code === 'not_found') {
           clearCartCookie(reply);
           return reply.code(404).send({ error: err.message });
+        }
+        if (err.code === 'conflict') {
+          return reply.code(409).send({ error: 'BUNDLE_EMPTY', message: err.message });
         }
       }
       return handleServiceError(reply, err);

@@ -473,6 +473,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pricing/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Evaluate discount rules for a set of line items
+         * @description Public price quote. Applies the highest-precedence matching pricing_rules (qty discounts, time windows, pre-event) and returns an itemized breakdown. Pure/deterministic; no DB writes.
+         */
+        post: operations["evaluatePricing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a bundle (bib / foto-flat / custom) for an event
+         * @description Organizer action. Creates a bundle rule plus its purchasable product SKU.
+         */
+        post: operations["createBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/foto-flat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get the event's foto-flat bundle summary
+         * @description Public. Returns the all-photos package summary, or 404 if none exists.
+         */
+        get: operations["getFotoFlat"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bundles/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a bundle to its current photo set
+         * @description Public preview. Returns the photoIds a bundle would deliver right now.
+         */
+        post: operations["resolveBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/cart": {
         parameters: {
             query?: never;
@@ -1048,12 +1134,68 @@ export interface components {
         CartCreate: {
             eventId: components["schemas"]["Uuid"];
         };
+        /** @description Either a single-photo product line (productId + licenseTierId) or a bundle line (bundleId). Provide exactly one of productId or bundleId. */
         CartItemCreate: {
-            productId: components["schemas"]["Uuid"];
+            productId?: components["schemas"]["Uuid"];
             photoId?: components["schemas"]["Uuid"];
             licenseTierId?: components["schemas"]["Uuid"];
+            bundleId?: components["schemas"]["Uuid"];
             /** @default 1 */
             quantity: number;
+        };
+        /** @enum {string} */
+        BundleKind: "bib" | "foto_flat" | "custom";
+        BundleCreate: {
+            kind: components["schemas"]["BundleKind"];
+            /** @description bib => {bib:"<value>"}; foto_flat => {all:true}; custom uses photoIds */
+            selector?: {
+                [key: string]: unknown;
+            };
+            basePriceCents: number;
+            currency: string;
+            licenseTierId: components["schemas"]["Uuid"];
+            name?: string;
+            photoIds?: components["schemas"]["Uuid"][];
+        };
+        BundleResolution: {
+            photoIds: components["schemas"]["Uuid"][];
+            count: number;
+            totalCents: number;
+            currency: string;
+        };
+        FotoFlatSummary: {
+            bundleId: components["schemas"]["Uuid"];
+            photoCount: number;
+            priceCents: number;
+            currency: string;
+            licenseTierId: components["schemas"]["Uuid"];
+        };
+        PricingEvaluateRequest: {
+            currency: string;
+            items: {
+                unitPriceCents: number;
+                quantity: number;
+                productId?: components["schemas"]["Uuid"];
+                bundleId?: components["schemas"]["Uuid"];
+                photoId?: components["schemas"]["Uuid"];
+                licenseTierId?: components["schemas"]["Uuid"];
+            }[];
+            context?: {
+                eventId?: components["schemas"]["Uuid"];
+                buyerId?: components["schemas"]["Uuid"];
+                /** Format: date-time */
+                now?: string;
+            };
+        };
+        PricingEvaluateResult: {
+            subtotalCents: number;
+            totalCents: number;
+            currency: string;
+            discounts: {
+                ruleId: components["schemas"]["Uuid"];
+                label: string;
+                amountCents: number;
+            }[];
         };
         CheckoutRequest: {
             /** Format: email */
@@ -2099,6 +2241,117 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    evaluatePricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PricingEvaluateRequest"];
+            };
+        };
+        responses: {
+            /** @description Itemized price evaluation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingEvaluateResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    createBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleCreate"];
+            };
+        };
+        responses: {
+            /** @description Bundle and product created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        bundleId: components["schemas"]["Uuid"];
+                        productId: components["schemas"]["Uuid"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    getFotoFlat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Foto-flat summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FotoFlatSummary"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    resolveBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resolved bundle contents. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundleResolution"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             500: components["responses"]["ServerError"];
         };
     };

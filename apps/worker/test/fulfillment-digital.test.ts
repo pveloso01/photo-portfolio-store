@@ -166,6 +166,12 @@ const makeDispatchDb = (
               return responses.event ?? [];
             case 'event_settings':
               return responses.settings ?? [];
+            case 'photo_derivatives':
+              // resolveDerivative looks up the 'full' derivative per photoId.
+              // The mock cannot see the predicate, so it returns one row for
+              // any photo that has a fixture item; empty items => no candidates
+              // => this branch is never hit.
+              return [{ objectKey: 'derivatives/event-1/full.jpg' }];
             default:
               return [];
           }

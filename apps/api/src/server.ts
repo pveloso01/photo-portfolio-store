@@ -8,6 +8,7 @@ import swaggerPlugin from './plugins/swagger.js';
 import adminAuditRoutes from './routes/admin/audit.js';
 import authPasswordlessRoutes from './routes/auth-passwordless.js';
 import authRoutes from './routes/auth.js';
+import bundlesRoutes from './routes/bundles.js';
 import cartRoutes from './routes/cart.js';
 import checkoutRoutes from './routes/checkout.js';
 import consentRoutes from './routes/consents.js';
@@ -84,8 +85,11 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   await app.register(checkoutRoutes);
   await app.register(stripeWebhookRoutes);
   await app.register(downloadsRoutes);
-  // M2 F2.4 — public storefront pricing/tier multipliers (anonymous-allowed).
+  // M2 F2.4/F2.5 — public storefront pricing: tier multipliers + price quote.
   await app.register(pricingRoutes);
+  // M2 F2.2/F2.3 — bundle resolve + foto-flat (public) and organizer bundle
+  // creation (RBAC-gated within the plugin).
+  await app.register(bundlesRoutes);
   // M2 F2.6 — buyer self-service refund requests (owner-gated within handler).
   await app.register(refundsRoutes);
   await app.register(adminAuditRoutes);

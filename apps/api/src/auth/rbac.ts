@@ -92,8 +92,13 @@ const DEFAULT_EXEMPT: ReadonlyArray<RegExp> = [
   /^\/v1\/consents\/biometric(\/.*)?$/,
   // F1.24 — face search is anonymous-allowed and gated by biometric consent.
   /^\/v1\/events\/[^/]+\/search\/face$/,
-  // M2 F2.4 — storefront pricing/tier listing is public.
+  // M2 F2.4/F2.5 — storefront pricing (tier listing + price quote) is public.
   /^\/v1\/pricing\/tiers$/,
+  /^\/v1\/pricing\/evaluate$/,
+  // M2 F2.2/F2.3 — bundle resolve + foto-flat summary are public storefront
+  // reads. Organizer bundle creation (POST /v1/events/:id/bundles) is RBAC-gated.
+  /^\/v1\/bundles\/[^/]+\/resolve$/,
+  /^\/v1\/events\/[^/]+\/foto-flat$/,
   // M2 F2.6 — order read + refund request are owner-gated within the handler
   // (RBAC permissions do not model per-order ownership), like the downloads route.
   /^\/v1\/orders\/[^/]+$/,

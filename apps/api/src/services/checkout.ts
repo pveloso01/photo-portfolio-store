@@ -18,6 +18,7 @@ import type Stripe from 'stripe';
 
 import { writeAudit } from '../lib/audit.js';
 import { stripe as defaultStripe } from '../lib/stripe.js';
+import { BundleServiceError, resolveBundle } from './bundles.js';
 
 const { carts, cartItems, orders, orderItems } = schema.commerce.tables;
 const { products } = schema.catalog.tables;
@@ -120,6 +121,38 @@ export const createOrderFromCart = async (
     throw new CheckoutServiceError('unprocessable', 'cart total must be positive');
   }
 
+  // 4b. Resolve and freeze bundle snapshots BEFORE creating the order. A bundle
+  // that resolves to zero photos (e.g. its bib tags changed since add-to-cart)
+  // must fail the checkout — charging for an empty delivery is never acceptable.
+  // We do this before the order insert and the Stripe PaymentIntent so a failure
+  // leaves no dangling order and moves no money.
+  const bundleSnapshots = new Map<string, string[]>();
+  for (const item of itemRows) {
+    const productRows = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, item.productId))
+      .limit(1);
+    const product = productRows[0];
+    const config = (product?.configJsonb ?? {}) as Record<string, unknown>;
+    const isBundleKind = product?.kind === 'digital_bundle' || product?.kind === 'foto_flat';
+    const bundleId = typeof config.bundleId === 'string' ? config.bundleId : null;
+    if (!isBundleKind || !bundleId) continue;
+    try {
+      const resolution = await resolveBundle(db, bundleId);
+      if (resolution.photoIds.length === 0) {
+        throw new CheckoutServiceError('unprocessable', 'bundle resolved to zero photos');
+      }
+      bundleSnapshots.set(item.productId, resolution.photoIds);
+    } catch (err) {
+      if (err instanceof BundleServiceError) {
+        // bundle_empty / bundle_not_found at checkout time -> not purchasable.
+        throw new CheckoutServiceError('unprocessable', `bundle not deliverable: ${err.code}`);
+      }
+      throw err;
+    }
+  }
+
   // 5. Insert the order in pending_payment. No PI id yet — we need orderId
   // first so it can serve as the Stripe idempotency_key.
   const insertedOrders = await db
@@ -142,6 +175,9 @@ export const createOrderFromCart = async (
   }
 
   // 6. Snapshot order_items. Pull product metadata for the immutable copy.
+  // For bundle products (digital_bundle or foto_flat), freeze the full photoId
+  // list at checkout time into metadataJsonb.bundleSnapshot so fulfillment can
+  // expand per-photo deliveries without hitting live resolvers.
   for (const item of itemRows) {
     const productRows = await db
       .select()
@@ -157,6 +193,19 @@ export const createOrderFromCart = async (
           config: product.configJsonb ?? {},
         }
       : {};
+
+    // Bundle products carry a frozen snapshot resolved in step 4b. A non-bundle
+    // item simply has no entry in the map.
+    const config = (product?.configJsonb ?? {}) as Record<string, unknown>;
+    const bundleId = typeof config.bundleId === 'string' ? config.bundleId : null;
+    const bundleSnapshot = bundleSnapshots.get(item.productId);
+
+    const metadata: Record<string, unknown> = {
+      licenseTierId: item.licenseTierId,
+      ...productMeta,
+      ...(bundleId && bundleSnapshot ? { bundleId, bundleSnapshot } : {}),
+    };
+
     await db.insert(orderItems).values({
       orderId: order.id,
       productId: item.productId,
@@ -166,7 +215,7 @@ export const createOrderFromCart = async (
       unitPriceCents: item.unitPriceCents,
       lineTotalCents: item.unitPriceCents * item.quantity,
       currency: item.currency,
-      metadataJsonb: { licenseTierId: item.licenseTierId, ...productMeta },
+      metadataJsonb: metadata,
     });
   }
 

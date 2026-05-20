@@ -733,6 +733,108 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '500': { $ref: '#/components/responses/ServerError' }
 
+  /v1/pricing/evaluate:
+    post:
+      operationId: evaluatePricing
+      tags: [commerce]
+      summary: Evaluate discount rules for a set of line items
+      description: >
+        Public price quote. Applies the highest-precedence matching pricing_rules
+        (qty discounts, time windows, pre-event) and returns an itemized
+        breakdown. Pure/deterministic; no DB writes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PricingEvaluateRequest'
+      responses:
+        '200':
+          description: Itemized price evaluation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingEvaluateResult'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /v1/events/{eventId}/bundles:
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      operationId: createBundle
+      tags: [commerce]
+      summary: Create a bundle (bib / foto-flat / custom) for an event
+      description: Organizer action. Creates a bundle rule plus its purchasable product SKU.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BundleCreate'
+      responses:
+        '201':
+          description: Bundle and product created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bundleId, productId]
+                properties:
+                  bundleId: { $ref: '#/components/schemas/Uuid' }
+                  productId: { $ref: '#/components/schemas/Uuid' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /v1/events/{eventId}/foto-flat:
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    get:
+      operationId: getFotoFlat
+      tags: [commerce]
+      summary: Get the event's foto-flat bundle summary
+      description: Public. Returns the all-photos package summary, or 404 if none exists.
+      responses:
+        '200':
+          description: Foto-flat summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FotoFlatSummary'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /v1/bundles/{id}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      operationId: resolveBundle
+      tags: [commerce]
+      summary: Resolve a bundle to its current photo set
+      description: Public preview. Returns the photoIds a bundle would deliver right now.
+      responses:
+        '200':
+          description: Resolved bundle contents.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BundleResolution'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
   /v1/cart:
     post:
       operationId: createCart
@@ -1587,13 +1689,93 @@ components:
       properties:
         eventId: { $ref: '#/components/schemas/Uuid' }
     CartItemCreate:
+      description: >
+        Either a single-photo product line (productId + licenseTierId) or a
+        bundle line (bundleId). Provide exactly one of productId or bundleId.
       type: object
-      required: [productId, quantity]
       properties:
         productId: { $ref: '#/components/schemas/Uuid' }
         photoId: { $ref: '#/components/schemas/Uuid' }
         licenseTierId: { $ref: '#/components/schemas/Uuid' }
+        bundleId: { $ref: '#/components/schemas/Uuid' }
         quantity: { type: integer, minimum: 1, default: 1 }
+    BundleKind:
+      type: string
+      enum: [bib, foto_flat, custom]
+    BundleCreate:
+      type: object
+      required: [kind, basePriceCents, currency, licenseTierId]
+      properties:
+        kind: { $ref: '#/components/schemas/BundleKind' }
+        selector:
+          type: object
+          additionalProperties: true
+          description: 'bib => {bib:"<value>"}; foto_flat => {all:true}; custom uses photoIds'
+        basePriceCents: { type: integer, minimum: 1 }
+        currency: { type: string }
+        licenseTierId: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string }
+        photoIds:
+          type: array
+          items: { $ref: '#/components/schemas/Uuid' }
+    BundleResolution:
+      type: object
+      required: [photoIds, count, totalCents, currency]
+      properties:
+        photoIds:
+          type: array
+          items: { $ref: '#/components/schemas/Uuid' }
+        count: { type: integer }
+        totalCents: { type: integer }
+        currency: { type: string }
+    FotoFlatSummary:
+      type: object
+      required: [bundleId, photoCount, priceCents, currency, licenseTierId]
+      properties:
+        bundleId: { $ref: '#/components/schemas/Uuid' }
+        photoCount: { type: integer }
+        priceCents: { type: integer }
+        currency: { type: string }
+        licenseTierId: { $ref: '#/components/schemas/Uuid' }
+    PricingEvaluateRequest:
+      type: object
+      required: [items, currency]
+      properties:
+        currency: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [unitPriceCents, quantity]
+            properties:
+              unitPriceCents: { type: integer, minimum: 0 }
+              quantity: { type: integer, minimum: 1 }
+              productId: { $ref: '#/components/schemas/Uuid' }
+              bundleId: { $ref: '#/components/schemas/Uuid' }
+              photoId: { $ref: '#/components/schemas/Uuid' }
+              licenseTierId: { $ref: '#/components/schemas/Uuid' }
+        context:
+          type: object
+          properties:
+            eventId: { $ref: '#/components/schemas/Uuid' }
+            buyerId: { $ref: '#/components/schemas/Uuid' }
+            now: { type: string, format: date-time }
+    PricingEvaluateResult:
+      type: object
+      required: [subtotalCents, discounts, totalCents, currency]
+      properties:
+        subtotalCents: { type: integer }
+        totalCents: { type: integer }
+        currency: { type: string }
+        discounts:
+          type: array
+          items:
+            type: object
+            required: [ruleId, label, amountCents]
+            properties:
+              ruleId: { $ref: '#/components/schemas/Uuid' }
+              label: { type: string }
+              amountCents: { type: integer }
     CheckoutRequest:
       type: object
       required: [buyerEmail]

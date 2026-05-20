@@ -39,7 +39,7 @@ import {
 } from '../services/fulfillment-emailer.js';
 
 const { orders, orderItems, fulfillments } = schema.commerce;
-const { photos, photoDerivatives } = schema.photos;
+const { photoDerivatives } = schema.photos;
 const { events, eventSettings } = schema.events;
 const { licenseTiers } = schema.catalog;
 
@@ -159,6 +159,22 @@ const defaultUploadZip = async (params: {
   );
 };
 
+/** Resolve `full` derivative for a single photoId. Returns null when not found. */
+const resolveDerivative = async (
+  db: DbClient,
+  photoId: string,
+): Promise<{ photoId: string; objectKey: string; filename: string } | null> => {
+  const rows = await db
+    .select({ objectKey: photoDerivatives.objectKey })
+    .from(photoDerivatives)
+    .where(and(eq(photoDerivatives.photoId, photoId), eq(photoDerivatives.kind, 'full')))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  const last = row.objectKey.split('/').pop() ?? `${photoId}.jpg`;
+  return { photoId, objectKey: row.objectKey, filename: `${photoId}-${last}` };
+};
+
 const loadOrder = async (db: DbClient, orderId: string): Promise<OrderLoadResult | null> => {
   const orderRows = await db
     .select({
@@ -187,37 +203,59 @@ const loadOrder = async (db: DbClient, orderId: string): Promise<OrderLoadResult
     .limit(1);
   const downloadExpiryHours = settingsRows[0]?.downloadExpiryHours ?? DEFAULT_EXPIRY_HOURS;
 
-  const itemRows = await db
+  // Load all order_items for this order including their metadata snapshot.
+  const rawItemRows = await db
     .select({
       photoId: orderItems.photoId,
-      derivativeKey: photoDerivatives.objectKey,
       licenseTierId: orderItems.licenseTierId,
+      metadataJsonb: orderItems.metadataJsonb,
     })
     .from(orderItems)
-    .innerJoin(photos, eq(photos.id, orderItems.photoId))
-    .innerJoin(
-      photoDerivatives,
-      and(eq(photoDerivatives.photoId, photos.id), eq(photoDerivatives.kind, 'full')),
-    )
     .where(eq(orderItems.orderId, orderId));
 
-  const items = itemRows
-    .filter(
-      (row): row is { photoId: string; derivativeKey: string; licenseTierId: string } =>
-        Boolean(row.photoId) && Boolean(row.derivativeKey) && Boolean(row.licenseTierId),
-    )
-    .map((row) => {
-      const last = row.derivativeKey.split('/').pop() ?? `${row.photoId}.jpg`;
-      return {
-        photoId: row.photoId,
-        objectKey: row.derivativeKey,
-        filename: `${row.photoId}-${last}`,
-      };
-    });
+  // Collect all (photoId, licenseTierId) pairs to resolve.
+  // For bundle items, expand from metadataJsonb.bundleSnapshot.
+  // For single-photo items, use the direct photoId.
+  interface DeliveryCandidate {
+    photoId: string;
+    licenseTierId: string;
+  }
 
-  // Resolve license tier for PDF generation. All items in a cart share one
-  // event-scoped tier; use the first item's tier as the representative.
-  const firstTierId = itemRows[0]?.licenseTierId ?? null;
+  const candidates: DeliveryCandidate[] = [];
+
+  for (const rawItem of rawItemRows) {
+    const meta = (rawItem.metadataJsonb ?? {}) as Record<string, unknown>;
+    const bundleSnapshot = meta.bundleSnapshot;
+
+    if (Array.isArray(bundleSnapshot) && bundleSnapshot.length > 0 && rawItem.photoId === null) {
+      // Bundle item: expand each snapshot photoId.
+      for (const pid of bundleSnapshot) {
+        if (typeof pid === 'string') {
+          candidates.push({ photoId: pid, licenseTierId: rawItem.licenseTierId });
+        }
+      }
+    } else if (rawItem.photoId !== null) {
+      // Single-photo item.
+      candidates.push({ photoId: rawItem.photoId, licenseTierId: rawItem.licenseTierId });
+    }
+  }
+
+  // Resolve derivatives for all candidates.
+  const deliveryItems: OrderLoadResult['items'] = [];
+  for (const candidate of candidates) {
+    const resolved = await resolveDerivative(db, candidate.photoId);
+    if (resolved) {
+      deliveryItems.push(resolved);
+    } else {
+      logger.warn(
+        { orderId, photoId: candidate.photoId },
+        'fulfillment: no full derivative for photo, skipping',
+      );
+    }
+  }
+
+  // Resolve license tier for PDF generation. Use the first item's tier.
+  const firstTierId = rawItemRows[0]?.licenseTierId ?? null;
   let tierCode = 'personal';
   let tierName = 'Personal use';
   let tierScope = '';
@@ -246,7 +284,7 @@ const loadOrder = async (db: DbClient, orderId: string): Promise<OrderLoadResult
     eventName: event.name,
     eventTimezone: event.timezone,
     downloadExpiryHours,
-    items,
+    items: deliveryItems,
     tierCode,
     tierName,
     tierScope,

@@ -67,6 +67,13 @@ vi.mock('@pkg/db', () => {
   const catalogTables = {
     products: tableMarker('products'),
     licenseTiers: tableMarker('products'),
+    bundles: tableMarker('bundles'),
+    bundleItems: tableMarker('bundles'),
+    pricingRules: tableMarker('products'),
+    pricingRuleTargets: tableMarker('products'),
+  };
+  const searchTables = {
+    bibTags: tableMarker('bibTags'),
   };
   const photoTables = {
     photos: tableMarker('products'),
@@ -90,6 +97,7 @@ vi.mock('@pkg/db', () => {
       catalog: { tables: catalogTables },
       photos: { tables: photoTables },
       events: { tables: eventTables },
+      search: { tables: searchTables },
       compliance: { tables: complianceTables, auditLog: complianceTables.auditLog },
     },
   };

@@ -12,6 +12,8 @@ import type { DbClient } from '@pkg/db';
 import { schema } from '@pkg/db';
 import { and, eq, sql } from 'drizzle-orm';
 
+import { BundleServiceError, findBundleProduct, resolveBundle } from './bundles.js';
+
 const { carts, cartItems } = schema.commerce.tables;
 const { products } = schema.catalog.tables;
 const { photos } = schema.photos.tables;
@@ -59,6 +61,16 @@ export interface AddCartItemInput {
   photoId?: string | null;
   licenseTierId: string;
   quantity?: number;
+}
+
+export interface AddBundleToCartInput {
+  bundleId: string;
+  quantity?: number;
+}
+
+export interface AddBundleToCartResult {
+  cartItemId: string;
+  snapshotCount: number;
 }
 
 // ---------- Errors ----------
@@ -473,6 +485,135 @@ export const removeCartItem = async (db: DbClient, cartItemId: string): Promise<
     cartId: current.cartId,
     payload: { cartItemId },
   });
+};
+
+// ---------- addBundleToCart ----------
+
+/** Adds a bundle to a cart.
+ *  Validates: bundle resolves to at least one photo, bundle's event matches
+ *  cart's event, bundle has a matching products row. Inserts a cart_items row
+ *  with photoId=null and unitPriceCents=bundle.basePriceCents. */
+export const addBundleToCart = async (
+  db: DbClient,
+  cartId: string,
+  input: AddBundleToCartInput,
+): Promise<AddBundleToCartResult> => {
+  const quantity = input.quantity ?? 1;
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new CartServiceError('unprocessable', 'quantity must be a positive integer');
+  }
+
+  const cart = await requireActiveCart(db, cartId);
+
+  // Resolve the bundle to confirm it is non-empty.
+  let resolution: Awaited<ReturnType<typeof resolveBundle>>;
+  try {
+    resolution = await resolveBundle(db, input.bundleId);
+  } catch (err) {
+    if (err instanceof BundleServiceError) {
+      if (err.code === 'bundle_not_found') {
+        throw new CartServiceError('unprocessable', `bundle ${input.bundleId} not found`);
+      }
+      if (err.code === 'bundle_empty') {
+        throw new CartServiceError('conflict', 'bundle is empty (BUNDLE_EMPTY)');
+      }
+      throw new CartServiceError('unprocessable', err.message);
+    }
+    throw err;
+  }
+
+  if (resolution.count === 0) {
+    throw new CartServiceError('conflict', 'bundle is empty (BUNDLE_EMPTY)');
+  }
+
+  // Find the products row for this bundle.
+  const bundleProduct = await findBundleProduct(db, input.bundleId);
+  if (!bundleProduct) {
+    throw new CartServiceError(
+      'unprocessable',
+      `no active product found for bundle ${input.bundleId}`,
+    );
+  }
+
+  // Event scope guard.
+  if (bundleProduct.eventId !== cart.eventId) {
+    throw new CartServiceError('unprocessable', "bundle's event does not match the cart's event");
+  }
+
+  // Upsert: bump quantity if a cart_items row for this product already exists.
+  const existing = await db
+    .select()
+    .from(cartItems)
+    .where(
+      and(
+        eq(cartItems.cartId, cart.id),
+        eq(cartItems.productId, bundleProduct.productId),
+        eq(cartItems.licenseTierId, bundleProduct.licenseTierId),
+      ),
+    );
+  const dup = existing.find((r) => (r.photoId ?? null) === null);
+  if (dup) {
+    const updated = await db
+      .update(cartItems)
+      .set({ quantity: dup.quantity + quantity })
+      .where(eq(cartItems.id, dup.id))
+      .returning();
+    const next = updated[0];
+    if (!next) {
+      throw new CartServiceError('invalid', 'update returned no row');
+    }
+    await touchCart(db, cart.id);
+    await writeAudit(db, {
+      action: 'cart.bundle.added',
+      cartId: cart.id,
+      eventId: cart.eventId,
+      payload: {
+        cartItemId: next.id,
+        bundleId: input.bundleId,
+        productId: bundleProduct.productId,
+        quantityDelta: quantity,
+        quantity: next.quantity,
+        snapshotCount: resolution.count,
+        deduped: true,
+      },
+    });
+    return { cartItemId: next.id, snapshotCount: resolution.count };
+  }
+
+  const inserted = await db
+    .insert(cartItems)
+    .values({
+      cartId: cart.id,
+      productId: bundleProduct.productId,
+      photoId: null,
+      licenseTierId: bundleProduct.licenseTierId,
+      quantity,
+      unitPriceCents: bundleProduct.priceCents,
+      currency: bundleProduct.currency,
+    })
+    .returning();
+
+  const row = inserted[0];
+  if (!row) {
+    throw new CartServiceError('invalid', 'insert returned no row');
+  }
+
+  await touchCart(db, cart.id);
+  await writeAudit(db, {
+    action: 'cart.bundle.added',
+    cartId: cart.id,
+    eventId: cart.eventId,
+    payload: {
+      cartItemId: row.id,
+      bundleId: input.bundleId,
+      productId: bundleProduct.productId,
+      quantity: row.quantity,
+      unitPriceCents: row.unitPriceCents,
+      snapshotCount: resolution.count,
+    },
+  });
+
+  return { cartItemId: row.id, snapshotCount: resolution.count };
 };
 
 // Marker: keep sql import alive for future query expansion.
