@@ -141,8 +141,12 @@ export const orders = app.table(
     buyerUserId: uuid('buyer_user_id'),
     subtotalCents: integer('subtotal_cents').notNull(),
     taxCents: integer('tax_cents').notNull().default(0),
-    // = subtotal + tax. Application enforces.
+    // = subtotal - discount + tax. Application enforces.
     totalCents: integer('total_cents').notNull(),
+    // Total discount applied by the pricing evaluator (F2.5) = subtotal - eval total.
+    discountCents: integer('discount_cents').notNull().default(0),
+    // Frozen discount breakdown (array of { ruleId, label, amountCents }) for receipts.
+    pricingBreakdown: jsonb('pricing_breakdown').notNull().default(sql`'[]'::jsonb`),
     // Cumulative amount refunded to the buyer (F2.7). Never exceeds total_cents.
     refundedCents: integer('refunded_cents').notNull().default(0),
     currency: text('currency').notNull(),

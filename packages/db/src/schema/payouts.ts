@@ -132,6 +132,11 @@ export const payouts = app.table(
       table.payoutAccountId,
       table.periodEnd,
     ),
+    // One payout per (account, period_end) — idempotency for the payout cron.
+    accountPeriodUnique: uniqueIndex('payouts_account_period_unique').on(
+      table.payoutAccountId,
+      table.periodEnd,
+    ),
   }),
 );
 
@@ -209,6 +214,10 @@ export const ledgerEntries = app.table(
     refundDedupeIdx: uniqueIndex('ledger_entries_refund_dedupe_idx')
       .on(table.refundId, table.accountId, table.direction)
       .where(sql`${table.refundId} is not null`),
+    // Payout idempotency: one entry per (payout, account, direction).
+    payoutDedupeIdx: uniqueIndex('ledger_entries_payout_dedupe_idx')
+      .on(table.payoutId, table.accountId, table.direction)
+      .where(sql`${table.payoutId} is not null`),
     amountPositive: check('ledger_entries_amount_positive', sql`${table.amountCents} > 0`),
   }),
 );

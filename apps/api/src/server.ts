@@ -7,6 +7,7 @@ import { db } from './lib/db.js';
 import swaggerPlugin from './plugins/swagger.js';
 import adminAuditRoutes from './routes/admin/audit.js';
 import adminOrderSplitsRoutes from './routes/admin/order-splits.js';
+import adminPayoutRetryRoutes from './routes/admin/payout-retry.js';
 import adminRefundsRoutes from './routes/admin/refunds.js';
 import authPasswordlessRoutes from './routes/auth-passwordless.js';
 import authRoutes from './routes/auth.js';
@@ -16,7 +17,9 @@ import checkoutRoutes from './routes/checkout.js';
 import consentRoutes from './routes/consents.js';
 import downloadsRoutes from './routes/downloads.js';
 import eventsRoutes from './routes/events.js';
+import internalPayoutsRoutes from './routes/internal/payouts.js';
 import meKycRoutes from './routes/me-kyc.js';
+import mePayoutsRoutes from './routes/me-payouts.js';
 import pricingRoutes from './routes/pricing.js';
 import productsRoutes from './routes/products.js';
 import refundsRoutes from './routes/refunds.js';
@@ -103,10 +106,16 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   await app.register(refundsRoutes);
   // M2 F2.9 — Stripe Connect onboarding (self-service "me" routes).
   await app.register(meKycRoutes);
+  // M2 F2.13 — photographer payout dashboard (self-service "me" routes).
+  await app.register(mePayoutsRoutes);
   // M2 F2.10 — admin order split view. M2 F2.7 — admin refund decision.
+  // M2 F2.12 — admin payout retry.
   await app.register(adminOrderSplitsRoutes);
   await app.register(adminRefundsRoutes);
+  await app.register(adminPayoutRetryRoutes);
   await app.register(adminAuditRoutes);
+  // M2 F2.12 — internal cron-trigger for the weekly payout run (secret-gated).
+  await app.register(internalPayoutsRoutes);
 
   app.get('/health', async () => ({ status: 'ok' }));
   app.get('/', async () => ({ name: 'photo-portfolio-store api', ok: true }));

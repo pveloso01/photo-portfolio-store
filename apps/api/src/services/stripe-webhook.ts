@@ -23,6 +23,7 @@ import { writeAudit } from '../lib/audit.js';
 import { reconcileRefundFromWebhook } from './admin-refunds.js';
 import { handleAccountUpdated } from './connect.js';
 import { recordOrderSale } from './order-split.js';
+import { reconcilePayoutFromWebhook } from './payouts.js';
 
 const { orders, stripeWebhookEvents } = schema.commerce.tables;
 
@@ -244,6 +245,24 @@ export const handleWebhookEvent = async (
         break;
       case 'account.updated':
         await handleAccountUpdated(db, event.data.object as Stripe.Account);
+        result = 'success';
+        break;
+      // Stripe Connect transfer lifecycle. The real event types are
+      // transfer.created / transfer.updated / transfer.reversed; map them to the
+      // payout reconciler's internal paid/failed semantics.
+      case 'transfer.created':
+      case 'transfer.updated':
+        await reconcilePayoutFromWebhook(db, {
+          type: 'transfer.paid',
+          transfer: { id: (event.data.object as Stripe.Transfer).id },
+        });
+        result = 'success';
+        break;
+      case 'transfer.reversed':
+        await reconcilePayoutFromWebhook(db, {
+          type: 'transfer.failed',
+          transfer: { id: (event.data.object as Stripe.Transfer).id },
+        });
         result = 'success';
         break;
       default:

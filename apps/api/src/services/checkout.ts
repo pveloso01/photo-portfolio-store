@@ -19,6 +19,7 @@ import type Stripe from 'stripe';
 import { writeAudit } from '../lib/audit.js';
 import { stripe as defaultStripe } from '../lib/stripe.js';
 import { BundleServiceError, resolveBundle } from './bundles.js';
+import { type EvalLineItem, evaluatePricing } from './pricing-evaluator.js';
 
 const { carts, cartItems, orders, orderItems } = schema.commerce.tables;
 const { products } = schema.catalog.tables;
@@ -113,11 +114,10 @@ export const createOrderFromCart = async (
     }
   }
 
-  // 4. Compute totals. M1: tax=0, total=subtotal.
+  // 4. Compute totals. M1: tax=0, total=subtotal before discount.
   const subtotalCents = itemRows.reduce((sum, row) => sum + row.unitPriceCents * row.quantity, 0);
   const taxCents = 0;
-  const totalCents = subtotalCents + taxCents;
-  if (totalCents <= 0) {
+  if (subtotalCents <= 0) {
     throw new CheckoutServiceError('unprocessable', 'cart total must be positive');
   }
 
@@ -126,7 +126,11 @@ export const createOrderFromCart = async (
   // must fail the checkout — charging for an empty delivery is never acceptable.
   // We do this before the order insert and the Stripe PaymentIntent so a failure
   // leaves no dangling order and moves no money.
+  //
+  // We also collect a product config map here so step 4c can build EvalLineItems
+  // without a second round of DB fetches.
   const bundleSnapshots = new Map<string, string[]>();
+  const productConfigMap = new Map<string, Record<string, unknown>>();
   for (const item of itemRows) {
     const productRows = await db
       .select()
@@ -135,6 +139,7 @@ export const createOrderFromCart = async (
       .limit(1);
     const product = productRows[0];
     const config = (product?.configJsonb ?? {}) as Record<string, unknown>;
+    productConfigMap.set(item.productId as string, config);
     const isBundleKind = product?.kind === 'digital_bundle' || product?.kind === 'foto_flat';
     const bundleId = typeof config.bundleId === 'string' ? config.bundleId : null;
     if (!isBundleKind || !bundleId) continue;
@@ -143,7 +148,7 @@ export const createOrderFromCart = async (
       if (resolution.photoIds.length === 0) {
         throw new CheckoutServiceError('unprocessable', 'bundle resolved to zero photos');
       }
-      bundleSnapshots.set(item.productId, resolution.photoIds);
+      bundleSnapshots.set(item.productId as string, resolution.photoIds);
     } catch (err) {
       if (err instanceof BundleServiceError) {
         // bundle_empty / bundle_not_found at checkout time -> not purchasable.
@@ -152,6 +157,44 @@ export const createOrderFromCart = async (
       throw err;
     }
   }
+
+  // 4c. Evaluate pricing rules. The evaluator is pure (no writes) and applies
+  // qty_discount / time_window / pre_event rules to compute a discount breakdown.
+  // If the evaluator throws for any reason we fail the checkout — a buyer must
+  // never be charged an amount that bypassed the pricing pipeline.
+  const evalItems: EvalLineItem[] = itemRows.map((item) => {
+    const productId = typeof item.productId === 'string' ? item.productId : undefined;
+    const config = productId ? (productConfigMap.get(productId) ?? {}) : {};
+    const bundleId = typeof config.bundleId === 'string' ? config.bundleId : undefined;
+    return {
+      productId,
+      bundleId,
+      photoId: typeof item.photoId === 'string' ? item.photoId : undefined,
+      licenseTierId: typeof item.licenseTierId === 'string' ? item.licenseTierId : undefined,
+      unitPriceCents: item.unitPriceCents as number,
+      quantity: item.quantity as number,
+    };
+  });
+
+  let evalResult: Awaited<ReturnType<typeof evaluatePricing>>;
+  try {
+    evalResult = await evaluatePricing(
+      db,
+      evalItems,
+      { eventId: typeof cart.eventId === 'string' ? cart.eventId : undefined },
+      cart.currency as string,
+    );
+  } catch (err) {
+    throw new CheckoutServiceError(
+      'unprocessable',
+      `pricing evaluation failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  // Clamp defensively: the evaluator already clamps internally, but we guard
+  // here to guarantee discountCents never exceeds subtotalCents in this layer.
+  const discountCents = Math.max(0, Math.min(subtotalCents - evalResult.totalCents, subtotalCents));
+  const totalCents = subtotalCents - discountCents + taxCents;
 
   // 5. Insert the order in pending_payment. No PI id yet — we need orderId
   // first so it can serve as the Stripe idempotency_key.
@@ -164,9 +207,11 @@ export const createOrderFromCart = async (
       buyerUserId: input.buyerUserId ?? null,
       subtotalCents,
       taxCents,
+      discountCents,
       totalCents,
       currency: cart.currency,
       status: 'pending_payment',
+      pricingBreakdown: evalResult.discounts,
     })
     .returning();
   const order = insertedOrders[0];
@@ -229,6 +274,7 @@ export const createOrderFromCart = async (
     payload: {
       cartId: cart.id,
       subtotalCents,
+      discountCents,
       totalCents,
       currency: cart.currency,
       itemCount: itemRows.length,

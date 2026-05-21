@@ -7,9 +7,11 @@ import pino from 'pino';
 
 import { db } from '../lib/db.js';
 import { qdrant } from '../lib/qdrant.js';
+import { triggerPayoutRun } from './payouts.js';
 import { runRetentionPass } from './retention.js';
 
 const log = pino({ name: 'retention-scheduler' });
+const payoutLog = pino({ name: 'payout-scheduler' });
 
 /**
  * Wire up cron jobs and return the live handles. Caller is responsible for
@@ -18,6 +20,10 @@ const log = pino({ name: 'retention-scheduler' });
  * - Biometric retention: every 6 hours. Nightly is too lossy for the
  *   biometric SLA (a 24h window of over-retention is hard to defend under
  *   BIPA); every hour is wasteful given normal event lifecycles.
+ * - Payout run: weekly, Mondays at 03:00 UTC. Cadence is fixed regardless of
+ *   public holidays (locked product decision). Minimum payout = 0 (also
+ *   locked). The job calls the internal API endpoint rather than importing
+ *   payout logic directly so the worker stays free of API-layer deps.
  * - `protect: true` skips overlapping ticks if a previous run is still in
  *   progress — important for slow purges that span many events.
  */
@@ -35,5 +41,20 @@ export const startSchedulers = (): Cron[] => {
     },
   );
 
-  return [retentionJob];
+  // Weekly payout cron — Mondays 03:00 UTC.
+  // Fixed day regardless of holidays (locked decision); no minimum (locked decision).
+  const payoutJob = new Cron('0 3 * * 1', { name: 'payout-run', protect: true }, async () => {
+    try {
+      const result = await triggerPayoutRun();
+      if (result.ok) {
+        payoutLog.info({ status: result.status }, 'payout-run triggered');
+      } else {
+        payoutLog.error({ status: result.status }, 'payout-run trigger failed');
+      }
+    } catch (err) {
+      payoutLog.error({ err }, 'payout-run cron error');
+    }
+  });
+
+  return [retentionJob, payoutJob];
 };

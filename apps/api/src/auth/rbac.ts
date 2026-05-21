@@ -105,6 +105,10 @@ const DEFAULT_EXEMPT: ReadonlyArray<RegExp> = [
   /^\/v1\/orders\/[^/]+\/refund-request$/,
   // M2 F2.9 — Stripe Connect self-service routes; owner = request.user.
   /^\/v1\/me\/kyc\/(start|status)$/,
+  // M2 F2.13 — payout dashboard self-service routes; owner = request.user.
+  /^\/v1\/me\/payouts(\/.*)?$/,
+  // M2 F2.12 — internal cron-trigger; machine-to-machine, secret-gated (not RBAC).
+  /^\/v1\/internal\/payouts\/run$/,
 ];
 
 // ---------- Helpers ----------

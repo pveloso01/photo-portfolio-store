@@ -13,6 +13,11 @@ interface Store {
   orders: Row[];
   orderItems: Row[];
   auditLog: Row[];
+  pricingRules: Row[];
+  pricingRuleTargets: Row[];
+  events: Row[];
+  bundles: Row[];
+  bibTags: Row[];
 }
 
 const newStore = (): Store => ({
@@ -22,6 +27,11 @@ const newStore = (): Store => ({
   orders: [],
   orderItems: [],
   auditLog: [],
+  pricingRules: [],
+  pricingRuleTargets: [],
+  events: [],
+  bundles: [],
+  bibTags: [],
 });
 
 const TABLE_KEY = Symbol('table-key');
@@ -69,8 +79,10 @@ vi.mock('@pkg/db', () => {
     licenseTiers: tableMarker('products'),
     bundles: tableMarker('bundles'),
     bundleItems: tableMarker('bundles'),
-    pricingRules: tableMarker('products'),
-    pricingRuleTargets: tableMarker('products'),
+    // Pricing tables get their own store buckets so evaluatePricing queries
+    // return [] by default (=> no discount), keeping all existing tests green.
+    pricingRules: tableMarker('pricingRules'),
+    pricingRuleTargets: tableMarker('pricingRuleTargets'),
   };
   const searchTables = {
     bibTags: tableMarker('bibTags'),
@@ -81,10 +93,11 @@ vi.mock('@pkg/db', () => {
     photoDerivatives: tableMarker('products'),
   };
   const eventTables = {
-    events: tableMarker('products'),
-    eventMembers: tableMarker('products'),
-    eventSettings: tableMarker('products'),
-    eventFtpCredentials: tableMarker('products'),
+    // evaluatePricing destructures schema.events.tables.events at module load.
+    events: tableMarker('events'),
+    eventMembers: tableMarker('events'),
+    eventSettings: tableMarker('events'),
+    eventFtpCredentials: tableMarker('events'),
   };
   const complianceTables = {
     auditLog: tableMarker('auditLog'),
@@ -127,6 +140,12 @@ const makeFakeDb = (): unknown => {
 
   const selectBuilder = (_selection?: Record<string, unknown>) => {
     let bucket: keyof Store | null = null;
+    // joinBucket: for innerJoin, rows are filtered against a second store bucket
+    // using the join predicate. The fake join simply cross-products both stores
+    // and keeps rows where the predicate holds (sufficient for evaluatePricing's
+    // pricingRules ⋈ pricingRuleTargets query which joins on ruleId).
+    let joinBucket: keyof Store | null = null;
+    let joinPredicate: ((r: Row) => boolean) | null = null;
     const filters: Array<(r: Row) => boolean> = [];
     let limitN: number | undefined;
 
@@ -135,8 +154,17 @@ const makeFakeDb = (): unknown => {
         bucket = table[TABLE_KEY] as keyof Store;
         return api;
       },
+      innerJoin(table: Row, predicate: (r: Row) => boolean) {
+        joinBucket = table[TABLE_KEY] as keyof Store;
+        joinPredicate = predicate;
+        return api;
+      },
       where(predicate: (r: Row) => boolean) {
         filters.push(predicate);
+        return api;
+      },
+      orderBy(..._args: unknown[]) {
+        // Ordering is a no-op in the fake DB; evaluatePricing sorts in JS anyway.
         return api;
       },
       limit(n: number) {
@@ -146,8 +174,27 @@ const makeFakeDb = (): unknown => {
       then(resolve: (v: Row[]) => unknown, reject: (e: unknown) => unknown) {
         try {
           if (!bucket) return resolve([]);
-          const filterFn = (r: Row) => filters.every((f) => f(r));
-          return resolve(runSelect(bucket, filterFn, limitN));
+          let rows: Row[];
+          if (joinBucket !== null && joinPredicate !== null) {
+            // Cross-product + join predicate + where filters.
+            const leftRows = store[bucket];
+            const rightRows = store[joinBucket];
+            const jp = joinPredicate;
+            const combined: Row[] = [];
+            for (const left of leftRows) {
+              for (const right of rightRows) {
+                const merged = { ...right, ...left };
+                if (jp(merged)) combined.push(merged);
+              }
+            }
+            const filterFn = (r: Row) => filters.every((f) => f(r));
+            rows = combined.filter(filterFn);
+          } else {
+            const filterFn = (r: Row) => filters.every((f) => f(r));
+            rows = runSelect(bucket, filterFn, undefined);
+          }
+          if (limitN !== undefined) rows = rows.slice(0, limitN);
+          return resolve(rows.map((r) => ({ ...r })));
         } catch (e) {
           return reject(e);
         }
@@ -250,10 +297,16 @@ vi.mock('drizzle-orm', () => {
     (...preds: Array<(r: Row) => boolean>) =>
     (row: Row) =>
       preds.every((p) => p(row));
+  // inArray: passes when the row's field value is in the provided list.
+  const inArray = (a: unknown, values: unknown[]) => (row: Row) => values.includes(valueOf(a, row));
+  // desc / asc are used as orderBy markers; the fake DB does not sort, so
+  // returning a stable sentinel is sufficient to avoid runtime errors.
+  const desc = (field: unknown) => ({ __desc: field });
+  const asc = (field: unknown) => ({ __asc: field });
   const sqlTag = ((strings: TemplateStringsArray, ..._values: unknown[]) => ({
     __sql: strings.join(''),
   })) as unknown as Record<string, unknown>;
-  return { eq, and, sql: sqlTag };
+  return { eq, and, inArray, desc, asc, sql: sqlTag };
 });
 
 // ---------- Field shims ----------
@@ -266,6 +319,9 @@ const installFieldShims = async (): Promise<void> => {
   const orderItemsTbl = schema.commerce.tables.orderItems as Record<string, unknown>;
   const productsTbl = schema.catalog.tables.products as Record<string, unknown>;
   const auditTbl = schema.compliance.tables.auditLog as Record<string, unknown>;
+  const pricingRulesTbl = schema.catalog.tables.pricingRules as Record<string, unknown>;
+  const pricingRuleTargetsTbl = schema.catalog.tables.pricingRuleTargets as Record<string, unknown>;
+  const eventsTbl = schema.events.tables.events as Record<string, unknown>;
 
   for (const col of [
     'id',
@@ -302,6 +358,7 @@ const installFieldShims = async (): Promise<void> => {
     'buyerUserId',
     'subtotalCents',
     'taxCents',
+    'discountCents',
     'totalCents',
     'currency',
     'stripePaymentIntentId',
@@ -310,6 +367,7 @@ const installFieldShims = async (): Promise<void> => {
     'placedAt',
     'paidAt',
     'updatedAt',
+    'pricingBreakdown',
   ]) {
     ordersTbl[col] = { column: col };
   }
@@ -356,6 +414,26 @@ const installFieldShims = async (): Promise<void> => {
     'userAgent',
   ]) {
     auditTbl[col] = { column: col };
+  }
+  for (const col of [
+    'id',
+    'scope',
+    'kind',
+    'params',
+    'priority',
+    'active',
+    'startsAt',
+    'endsAt',
+    'createdAt',
+    'updatedAt',
+  ]) {
+    pricingRulesTbl[col] = { column: col };
+  }
+  for (const col of ['id', 'ruleId', 'targetType', 'targetId', 'createdAt']) {
+    pricingRuleTargetsTbl[col] = { column: col };
+  }
+  for (const col of ['id', 'eventDate', 'createdAt', 'updatedAt']) {
+    eventsTbl[col] = { column: col };
   }
 };
 
@@ -422,6 +500,32 @@ const seedProduct = (args: { id: string; priceCents?: number; currency?: string 
     photoId: null,
     active: true,
   });
+};
+
+const seedPricingRule = (args: {
+  id?: string;
+  kind: string;
+  scope?: string;
+  params: Record<string, unknown>;
+  priority?: number;
+  active?: boolean;
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+}): string => {
+  const id = args.id ?? fakeUuid();
+  store.pricingRules.push({
+    id,
+    scope: args.scope ?? 'global',
+    kind: args.kind,
+    params: args.params,
+    priority: args.priority ?? 0,
+    active: args.active ?? true,
+    startsAt: args.startsAt ?? null,
+    endsAt: args.endsAt ?? null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return id;
 };
 
 // ---------- Lifecycle ----------
@@ -631,6 +735,81 @@ describe('createOrderFromCart', () => {
     });
 
     expect((store.orders[0] as Row).buyerUserId).toBe(userId);
+  });
+
+  it('global qty_discount rule applies: discountCents > 0, totalCents = subtotal - discount, pricingBreakdown persisted', async () => {
+    const svc = await importService();
+    const cart = seedCart({});
+    // 3 items at 1000 each = 3000 subtotal
+    seedCartItem(cart.id as string, { quantity: 3, unitPriceCents: 1000, productId: PRODUCT_1 });
+    seedProduct({ id: PRODUCT_1, priceCents: 1000 });
+
+    // Global qty_discount: 10% off when qty >= 2
+    const ruleId = seedPricingRule({
+      kind: 'qty_discount',
+      scope: 'global',
+      params: { tiers: [{ min: 2, pct: 10 }] },
+      priority: 0,
+    });
+
+    stripeCreate.mockResolvedValue({
+      id: 'pi_discount_1',
+      client_secret: 'pi_discount_1_secret',
+    });
+
+    const result = await svc.createOrderFromCart(db as never, cart.id as string, {
+      buyerEmail: 'buyer@example.com',
+    });
+
+    // 10% of 3000 = 300 discount => total = 2700
+    expect(result.totalCents).toBe(2700);
+
+    const order = store.orders[0] as Row;
+    expect(order.discountCents).toBe(300);
+    expect(order.totalCents).toBe(2700);
+    expect(order.subtotalCents).toBe(3000);
+
+    const breakdown = order.pricingBreakdown as Array<Record<string, unknown>>;
+    expect(Array.isArray(breakdown)).toBe(true);
+    expect(breakdown).toHaveLength(1);
+    const [entry] = breakdown;
+    expect(entry?.ruleId).toBe(ruleId);
+    expect(entry?.amountCents).toBe(300);
+
+    // Stripe receives the discounted amount.
+    const [intentArgs] = stripeCreate.mock.calls[0] as [Record<string, unknown>];
+    expect(intentArgs.amount).toBe(2700);
+  });
+
+  it('evaluator throws → checkout throws CheckoutServiceError unprocessable', async () => {
+    const svc = await importService();
+    const cart = seedCart({});
+    seedCartItem(cart.id as string, { quantity: 1, unitPriceCents: 1500, productId: PRODUCT_1 });
+    seedProduct({ id: PRODUCT_1, priceCents: 1500 });
+
+    // Seed a malformed pricingRules row that causes the query itself to throw by
+    // making the fake pricingRules store throw on access. We achieve this by
+    // replacing the store's pricingRules array with a getter that throws.
+    Object.defineProperty(store, 'pricingRules', {
+      get() {
+        throw new Error('db: pricing_rules unavailable');
+      },
+      configurable: true,
+    });
+
+    await expect(
+      svc.createOrderFromCart(db as never, cart.id as string, {
+        buyerEmail: 'buyer@example.com',
+      }),
+    ).rejects.toMatchObject({ code: 'unprocessable', name: 'CheckoutServiceError' });
+
+    // No order should have been inserted (the evaluator runs before the insert).
+    // Reset the property so afterEach cleanup works.
+    Object.defineProperty(store, 'pricingRules', {
+      value: [],
+      writable: true,
+      configurable: true,
+    });
   });
 });
 

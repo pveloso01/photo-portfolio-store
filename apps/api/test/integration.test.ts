@@ -210,6 +210,24 @@ vi.mock('../src/services/connect.js', () => ({
 vi.mock('../src/services/admin-refunds.js', () => ({
   reconcileRefundFromWebhook: vi.fn(async () => undefined),
 }));
+vi.mock('../src/services/payouts.js', () => ({
+  reconcilePayoutFromWebhook: vi.fn(async () => undefined),
+}));
+// F2.5 pricing evaluation is exercised by its own tests; here it is a no-op
+// (no discounts) so the M1 pipeline totals are unchanged.
+vi.mock('../src/services/pricing-evaluator.js', () => ({
+  evaluatePricing: vi.fn(
+    async (
+      _db: unknown,
+      items: Array<{ unitPriceCents: number; quantity: number }>,
+      _ctx: unknown,
+      currency: string,
+    ) => {
+      const subtotalCents = items.reduce((s, i) => s + i.unitPriceCents * i.quantity, 0);
+      return { subtotalCents, discounts: [], totalCents: subtotalCents, currency };
+    },
+  ),
+}));
 
 vi.mock('drizzle-orm', () => {
   type Field = { column: string };

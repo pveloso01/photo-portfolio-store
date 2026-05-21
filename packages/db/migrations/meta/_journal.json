@@ -50,6 +50,13 @@
       "when": 1779561907438,
       "tag": "0006_ledger_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779648307438,
+      "tag": "0007_payouts_and_discounts",
+      "breakpoints": true
     }
   ]
 }
