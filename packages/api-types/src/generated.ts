@@ -827,6 +827,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/payouts/balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Photographer payout balance + next-payout estimate */
+        get: operations["getPayoutBalance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/payouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paginated list of the photographer's past payouts */
+        get: operations["listMyPayouts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/payouts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        /** Payout detail with ledger entries grouped by kind */
+        get: operations["getMyPayout"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/payouts/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a failed payout transfer (admin) */
+        post: operations["retryPayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/internal/payouts/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger the weekly payout run (internal, secret-gated)
+         * @description Machine-to-machine. Requires the x-internal-secret header. Not RBAC-gated.
+         */
+        post: operations["runPayouts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/audit-log": {
         parameters: {
             query?: never;
@@ -1310,7 +1402,14 @@ export interface components {
             buyerUserId?: components["schemas"]["Uuid"];
             subtotalCents: number;
             taxCents: number;
+            discountCents?: number;
+            pricingBreakdown?: {
+                ruleId?: string;
+                label?: string;
+                amountCents?: number;
+            }[];
             totalCents: number;
+            refundedCents?: number;
             currency: string;
             stripePaymentIntentId?: string | null;
             stripeChargeId?: string | null;
@@ -1323,6 +1422,28 @@ export interface components {
             updatedAt: string;
             items: components["schemas"]["OrderItem"][];
             refundRequest?: components["schemas"]["OrderRefundRequest"] | null;
+        };
+        PayoutListItem: {
+            id: components["schemas"]["Uuid"];
+            /** Format: date */
+            periodStart: string;
+            /** Format: date */
+            periodEnd: string;
+            grossCents: number;
+            feesCents: number;
+            netCents: number;
+            /** @enum {string} */
+            status: "pending" | "sent" | "paid" | "failed";
+            /** Format: uri */
+            stripeReceiptUrl?: string;
+        };
+        PayoutSummary: {
+            payoutId: components["schemas"]["Uuid"];
+            payoutAccountId: components["schemas"]["Uuid"];
+            photographerId: components["schemas"]["Uuid"];
+            netCents: number;
+            currency: string;
+            status: string;
         };
         OrderRefundRequest: {
             id: components["schemas"]["Uuid"];
@@ -2858,6 +2979,159 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
             502: components["responses"]["ServerError"];
+        };
+    };
+    getPayoutBalance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Balance view. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        availableCents: number;
+                        pendingCents: number;
+                        nextPayoutEstimateCents: number;
+                        /** Format: date-time */
+                        nextPayoutDate: string;
+                        currency: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    listMyPayouts: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Payout page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PayoutListItem"][];
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    getMyPayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Payout detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        payout: components["schemas"]["PayoutListItem"];
+                        entriesByKind: {
+                            [key: string]: {
+                                id?: components["schemas"]["Uuid"];
+                                accountId?: string;
+                                /** @enum {string} */
+                                direction?: "debit" | "credit";
+                                amountCents?: number;
+                                kind?: string;
+                                memo?: string;
+                                /** Format: date-time */
+                                createdAt?: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    retryPayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Payout re-attempted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    runPayouts: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-internal-secret": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Disabled (INTERNAL_CRON_SECRET unset). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     listAuditLog: {

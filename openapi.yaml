@@ -1196,6 +1196,128 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '502': { $ref: '#/components/responses/ServerError' }
+  /v1/me/payouts/balance:
+    get:
+      operationId: getPayoutBalance
+      tags: [commerce]
+      summary: Photographer payout balance + next-payout estimate
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Balance view.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [availableCents, pendingCents, nextPayoutEstimateCents, nextPayoutDate, currency]
+                properties:
+                  availableCents: { type: integer }
+                  pendingCents: { type: integer }
+                  nextPayoutEstimateCents: { type: integer }
+                  nextPayoutDate: { type: string, format: date-time }
+                  currency: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/me/payouts:
+    get:
+      operationId: listMyPayouts
+      tags: [commerce]
+      summary: Paginated list of the photographer's past payouts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: Payout page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PayoutListItem' }
+                  nextCursor: { type: string, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/me/payouts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      operationId: getMyPayout
+      tags: [commerce]
+      summary: Payout detail with ledger entries grouped by kind
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Payout detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payout, entriesByKind]
+                properties:
+                  payout: { $ref: '#/components/schemas/PayoutListItem' }
+                  entriesByKind:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id: { $ref: '#/components/schemas/Uuid' }
+                          accountId: { type: string }
+                          direction: { type: string, enum: [debit, credit] }
+                          amountCents: { type: integer }
+                          kind: { type: string }
+                          memo: { type: string }
+                          createdAt: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/admin/payouts/{id}/retry:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      operationId: retryPayout
+      tags: [admin]
+      summary: Retry a failed payout transfer (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Payout re-attempted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/internal/payouts/run:
+    post:
+      operationId: runPayouts
+      tags: [admin]
+      summary: Trigger the weekly payout run (internal, secret-gated)
+      description: Machine-to-machine. Requires the x-internal-secret header. Not RBAC-gated.
+      parameters:
+        - name: x-internal-secret
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Run summary. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { description: Disabled (INTERNAL_CRON_SECRET unset). }
   /v1/admin/audit-log:
     get:
       operationId: listAuditLog
@@ -1967,7 +2089,17 @@ components:
         buyerUserId: { $ref: '#/components/schemas/Uuid' }
         subtotalCents: { type: integer }
         taxCents: { type: integer }
+        discountCents: { type: integer }
+        pricingBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              ruleId: { type: string }
+              label: { type: string }
+              amountCents: { type: integer }
         totalCents: { type: integer }
+        refundedCents: { type: integer }
         currency: { type: string }
         stripePaymentIntentId: { type: string, nullable: true }
         stripeChargeId: { type: string, nullable: true }
@@ -1982,6 +2114,28 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/OrderRefundRequest'
+    PayoutListItem:
+      type: object
+      required: [id, periodStart, periodEnd, grossCents, feesCents, netCents, status]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        grossCents: { type: integer }
+        feesCents: { type: integer }
+        netCents: { type: integer }
+        status: { type: string, enum: [pending, sent, paid, failed] }
+        stripeReceiptUrl: { type: string, format: uri }
+    PayoutSummary:
+      type: object
+      required: [payoutId, payoutAccountId, photographerId, netCents, currency, status]
+      properties:
+        payoutId: { $ref: '#/components/schemas/Uuid' }
+        payoutAccountId: { $ref: '#/components/schemas/Uuid' }
+        photographerId: { $ref: '#/components/schemas/Uuid' }
+        netCents: { type: integer }
+        currency: { type: string }
+        status: { type: string }
     OrderRefundRequest:
       type: object
       required: [id, status, reason, createdAt]
