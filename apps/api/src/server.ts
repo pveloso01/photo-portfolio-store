@@ -5,7 +5,10 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import rbacPlugin from './auth/rbac.js';
 import { db } from './lib/db.js';
 import swaggerPlugin from './plugins/swagger.js';
+import adminAuditExportRoutes from './routes/admin/audit-export.js';
 import adminAuditRoutes from './routes/admin/audit.js';
+import adminHealthRoutes from './routes/admin/health.js';
+import adminModerationRoutes from './routes/admin/moderation.js';
 import adminOrderSplitsRoutes from './routes/admin/order-splits.js';
 import adminPayoutRetryRoutes from './routes/admin/payout-retry.js';
 import adminRefundsRoutes from './routes/admin/refunds.js';
@@ -16,10 +19,12 @@ import cartRoutes from './routes/cart.js';
 import checkoutRoutes from './routes/checkout.js';
 import consentRoutes from './routes/consents.js';
 import downloadsRoutes from './routes/downloads.js';
+import eventStatsRoutes from './routes/event-stats.js';
 import eventsRoutes from './routes/events.js';
 import internalPayoutsRoutes from './routes/internal/payouts.js';
 import meKycRoutes from './routes/me-kyc.js';
 import mePayoutsRoutes from './routes/me-payouts.js';
+import mePhotographerRoutes from './routes/me-photographer.js';
 import pricingRoutes from './routes/pricing.js';
 import productsRoutes from './routes/products.js';
 import refundsRoutes from './routes/refunds.js';
@@ -108,12 +113,20 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   await app.register(meKycRoutes);
   // M2 F2.13 — photographer payout dashboard (self-service "me" routes).
   await app.register(mePayoutsRoutes);
+  // M3 F3.10 — photographer dashboard analytics (self-service "me" routes).
+  await app.register(mePhotographerRoutes);
+  // M3 F3.9 — organizer event analytics (event-scoped commerce:read_orders).
+  await app.register(eventStatsRoutes);
   // M2 F2.10 — admin order split view. M2 F2.7 — admin refund decision.
   // M2 F2.12 — admin payout retry.
   await app.register(adminOrderSplitsRoutes);
   await app.register(adminRefundsRoutes);
   await app.register(adminPayoutRetryRoutes);
   await app.register(adminAuditRoutes);
+  // M3 F3.1 — admin health. F3.2 — moderation queue. F3.11 — audit export.
+  await app.register(adminHealthRoutes);
+  await app.register(adminModerationRoutes);
+  await app.register(adminAuditExportRoutes);
   // M2 F2.12 — internal cron-trigger for the weekly payout run (secret-gated).
   await app.register(internalPayoutsRoutes);
 

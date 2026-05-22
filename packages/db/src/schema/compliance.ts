@@ -190,10 +190,41 @@ export const consentPolicyVersions = app.table(
   }),
 );
 
+// ---------- audit_exports ----------
+// F3.11 — async audit-log CSV export jobs. file_key points at the R2 object
+// once the export is ready. requestedBy refs users.id (cross-context, no FK).
+
+export const auditExportStatus = app.enum('audit_export_status', [
+  'pending',
+  'running',
+  'ready',
+  'failed',
+]);
+
+export const auditExports = app.table(
+  'audit_exports',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    requestedBy: uuid('requested_by').notNull(),
+    filters: jsonb('filters').notNull().default(sql`'{}'::jsonb`),
+    status: auditExportStatus('status').notNull().default('pending'),
+    rowCount: integer('row_count'),
+    fileKey: text('file_key'),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => ({
+    requestedByIdx: index('audit_exports_requested_by_idx').on(table.requestedBy, table.createdAt),
+  }),
+);
+
 // ---------- Grouped export ----------
 
 export const tables = {
   consents,
   auditLog,
   consentPolicyVersions,
+  auditExports,
 };

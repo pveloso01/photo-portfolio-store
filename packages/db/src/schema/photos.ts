@@ -38,6 +38,22 @@ export const photoStatus = app.enum('photo_status', [
 
 export const derivativeKind = app.enum('derivative_kind', ['thumb', 'preview', 'web', 'full']);
 
+// F3.2 moderation. moderation_status is the source of truth; the legacy
+// `hidden` boolean is kept in sync by the moderation service.
+export const photoModerationStatus = app.enum('photo_moderation_status', [
+  'visible',
+  'hidden',
+  'deleted',
+]);
+
+export const photoReportReason = app.enum('photo_report_reason', [
+  'inappropriate',
+  'copyright',
+  'privacy',
+  'quality',
+  'other',
+]);
+
 // ---------- upload_sessions ----------
 // Resumable multipart uploads (F1.11). Tracks an in-flight R2/S3 multipart
 // upload from initiation to completion / abort / expiry. A GC worker scans
@@ -115,6 +131,12 @@ export const photos = app.table(
     // Soft-hide for moderation (F3.2). Distinct from status='hidden' which is
     // a terminal moderation state; `hidden=true` is a reversible toggle.
     hidden: boolean('hidden').notNull().default(false),
+    // F3.2 moderation source of truth; kept in sync with `hidden` by the
+    // moderation service ('hidden'->hidden=true, 'visible'->hidden=false).
+    moderationStatus: photoModerationStatus('moderation_status').notNull().default('visible'),
+    // Number of reports/auto-flags; drives moderation-queue severity ordering.
+    flagCount: integer('flag_count').notNull().default(0),
+    lastFlaggedAt: timestamp('last_flagged_at', { withTimezone: true, mode: 'date' }),
     // F3.13 dashboard surfacing.
     featured: boolean('featured').notNull().default(false),
     // Set by F3.5 takedown workflow. Non-null implies status='takedown'.
@@ -175,10 +197,54 @@ export const photoDerivatives = app.table(
   }),
 );
 
+// ---------- photo_reports ----------
+// F3.2 — user/auto-generated reports feeding the moderation queue. reporterId
+// null = anonymous report or system auto-flag. Cross-context refs, no FK.
+
+export const photoReports = app.table(
+  'photo_reports',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    photoId: uuid('photo_id').notNull(),
+    reporterId: uuid('reporter_id'),
+    reason: photoReportReason('reason').notNull(),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => ({
+    photoIdx: index('photo_reports_photo_idx').on(table.photoId),
+  }),
+);
+
+// ---------- photo_views ----------
+// F3.10 — cheap append-only view tracking for photographer analytics. viewerHash
+// is a salted hash of IP+UA (no raw PII). Retained ~90 days (GC sweep later).
+
+export const photoViews = app.table(
+  'photo_views',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    photoId: uuid('photo_id').notNull(),
+    viewerHash: text('viewer_hash').notNull(),
+    source: text('source'),
+    viewedAt: timestamp('viewed_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => ({
+    photoViewedIdx: index('photo_views_photo_viewed_idx').on(table.photoId, table.viewedAt),
+    gcIdx: index('photo_views_gc_idx').on(table.viewedAt),
+  }),
+);
+
 // ---------- Grouped export ----------
 
 export const tables = {
   uploadSessions,
   photos,
   photoDerivatives,
+  photoReports,
+  photoViews,
 };

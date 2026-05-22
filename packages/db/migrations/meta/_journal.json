@@ -57,6 +57,13 @@
       "when": 1779648307438,
       "tag": "0007_payouts_and_discounts",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779734707438,
+      "tag": "0008_moderation_views_exports",
+      "breakpoints": true
     }
   ]
 }
