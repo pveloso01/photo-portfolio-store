@@ -1318,6 +1318,221 @@ paths:
         '200': { description: Run summary. }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '503': { description: Disabled (INTERNAL_CRON_SECRET unset). }
+  /v1/admin/health:
+    get:
+      operationId: getAdminHealth
+      tags: [admin]
+      summary: Admin health view (build SHA, uptime, DB latency)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Health metrics.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [buildSha, uptimeSeconds, queueDepth, dbLatencyMs]
+                properties:
+                  buildSha: { type: string }
+                  uptimeSeconds: { type: integer }
+                  queueDepth: { type: integer, nullable: true }
+                  dbLatencyMs: { type: number }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/admin/moderation/queue:
+    get:
+      operationId: getModerationQueue
+      tags: [admin]
+      summary: Moderation queue (flagged / non-visible photos)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: cursor, in: query, required: false, schema: { type: string } }
+        - { name: severity, in: query, required: false, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated moderation queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        photoId: { $ref: '#/components/schemas/Uuid' }
+                        eventId: { $ref: '#/components/schemas/Uuid' }
+                        photographerUserId: { $ref: '#/components/schemas/Uuid' }
+                        flagCount: { type: integer }
+                        lastFlaggedAt: { type: string, format: date-time, nullable: true }
+                        moderationStatus: { type: string, enum: [visible, hidden, deleted] }
+                        reasons: { type: array, items: { type: string } }
+                        createdAt: { type: string, format: date-time }
+                  nextCursor: { type: string, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/admin/moderation/bulk:
+    post:
+      operationId: bulkModerate
+      tags: [admin]
+      summary: Bulk hide / show / delete photos (max 100)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, photoIds]
+              properties:
+                action: { type: string, enum: [hide, show, delete] }
+                photoIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { $ref: '#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Bulk result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated, failed]
+                properties:
+                  updated: { type: integer }
+                  failed: { type: array, items: { $ref: '#/components/schemas/Uuid' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /v1/events/{id}/stats:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      operationId: getEventStats
+      tags: [commerce]
+      summary: Organizer event analytics
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Event stats.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventStats' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/events/{id}/stats.csv:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      operationId: getEventStatsCsv
+      tags: [commerce]
+      summary: Organizer event analytics (CSV)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Event stats as CSV.
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/me/photographer/stats:
+    get:
+      operationId: getPhotographerStats
+      tags: [commerce]
+      summary: Photographer dashboard analytics
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: range, in: query, required: false, schema: { type: string, enum: [7d, 30d, 90d, all] } }
+      responses:
+        '200':
+          description: Photographer stats.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PhotographerStats' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/me/photographer/stats.csv:
+    get:
+      operationId: getPhotographerStatsCsv
+      tags: [commerce]
+      summary: Photographer dashboard analytics (CSV)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: range, in: query, required: false, schema: { type: string, enum: [7d, 30d, 90d, all] } }
+      responses:
+        '200':
+          description: Photographer stats as CSV.
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/admin/audit/export:
+    post:
+      operationId: createAuditExport
+      tags: [admin]
+      summary: Start an async audit-log CSV export
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from: { type: string, format: date-time }
+                to: { type: string, format: date-time }
+                actorId: { $ref: '#/components/schemas/Uuid' }
+                action: { type: string }
+                targetType: { type: string }
+                targetId: { type: string }
+      responses:
+        '202':
+          description: Export job accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId]
+                properties:
+                  jobId: { $ref: '#/components/schemas/Uuid' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/admin/audit/export/{jobId}:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    get:
+      operationId: getAuditExportStatus
+      tags: [admin]
+      summary: Poll an audit export job; returns a signed URL when ready
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Export status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, rowCount]
+                properties:
+                  status: { type: string, enum: [pending, running, ready, failed] }
+                  rowCount: { type: integer, nullable: true }
+                  downloadUrl: { type: string, format: uri }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /v1/admin/audit-log:
     get:
       operationId: listAuditLog
@@ -2126,6 +2341,93 @@ components:
         netCents: { type: integer }
         status: { type: string, enum: [pending, sent, paid, failed] }
         stripeReceiptUrl: { type: string, format: uri }
+    EventStats:
+      type: object
+      required:
+        - totalPhotosUploaded
+        - photosWithFaces
+        - uniqueFacesDetected
+        - totalOrders
+        - grossRevenueCents
+        - netRevenueCents
+        - refundCount
+        - refundAmountCents
+        - conversionRate
+        - topPhotographersBySales
+        - salesByHour
+        - currency
+      properties:
+        totalPhotosUploaded: { type: integer }
+        photosWithFaces: { type: integer }
+        uniqueFacesDetected: { type: integer }
+        totalOrders: { type: integer }
+        grossRevenueCents: { type: integer }
+        netRevenueCents: { type: integer }
+        refundCount: { type: integer }
+        refundAmountCents: { type: integer }
+        conversionRate: { type: number }
+        currency: { type: string }
+        topPhotographersBySales:
+          type: array
+          items:
+            type: object
+            properties:
+              photographerUserId: { $ref: '#/components/schemas/Uuid' }
+              salesCents: { type: integer }
+        salesByHour:
+          type: array
+          items:
+            type: object
+            properties:
+              hour: { type: string }
+              salesCents: { type: integer }
+              orderCount: { type: integer }
+    PhotoStat:
+      type: object
+      properties:
+        photoId: { $ref: '#/components/schemas/Uuid' }
+        revenueCents: { type: integer }
+        views: { type: integer }
+        sales: { type: integer }
+    PhotographerStats:
+      type: object
+      required:
+        - totalPhotos
+        - totalSales
+        - grossEarningsCents
+        - pendingPayoutCents
+        - paidPayoutsCents
+        - topPhotos
+        - bottomPhotos
+        - conversionRate
+        - trafficSources
+        - faceMatchAppearanceRate
+        - timeseries
+      properties:
+        totalPhotos: { type: integer }
+        totalSales: { type: integer }
+        grossEarningsCents: { type: integer }
+        pendingPayoutCents: { type: integer }
+        paidPayoutsCents: { type: integer }
+        conversionRate: { type: number }
+        faceMatchAppearanceRate: { type: number }
+        topPhotos: { type: array, items: { $ref: '#/components/schemas/PhotoStat' } }
+        bottomPhotos: { type: array, items: { $ref: '#/components/schemas/PhotoStat' } }
+        trafficSources:
+          type: array
+          items:
+            type: object
+            properties:
+              source: { type: string }
+              views: { type: integer }
+        timeseries:
+          type: array
+          items:
+            type: object
+            properties:
+              day: { type: string }
+              views: { type: integer }
+              salesCents: { type: integer }
     PayoutSummary:
       type: object
       required: [payoutId, payoutAccountId, photographerId, netCents, currency, status]

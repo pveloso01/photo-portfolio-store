@@ -919,6 +919,165 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin health view (build SHA, uptime, DB latency) */
+        get: operations["getAdminHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/moderation/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Moderation queue (flagged / non-visible photos) */
+        get: operations["getModerationQueue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/moderation/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk hide / show / delete photos (max 100) */
+        post: operations["bulkModerate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        /** Organizer event analytics */
+        get: operations["getEventStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/stats.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        /** Organizer event analytics (CSV) */
+        get: operations["getEventStatsCsv"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/photographer/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Photographer dashboard analytics */
+        get: operations["getPhotographerStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/photographer/stats.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Photographer dashboard analytics (CSV) */
+        get: operations["getPhotographerStatsCsv"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/audit/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start an async audit-log CSV export */
+        post: operations["createAuditExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/audit/export/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Poll an audit export job; returns a signed URL when ready */
+        get: operations["getAuditExportStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/audit-log": {
         parameters: {
             query?: never;
@@ -1436,6 +1595,53 @@ export interface components {
             status: "pending" | "sent" | "paid" | "failed";
             /** Format: uri */
             stripeReceiptUrl?: string;
+        };
+        EventStats: {
+            totalPhotosUploaded: number;
+            photosWithFaces: number;
+            uniqueFacesDetected: number;
+            totalOrders: number;
+            grossRevenueCents: number;
+            netRevenueCents: number;
+            refundCount: number;
+            refundAmountCents: number;
+            conversionRate: number;
+            currency: string;
+            topPhotographersBySales: {
+                photographerUserId?: components["schemas"]["Uuid"];
+                salesCents?: number;
+            }[];
+            salesByHour: {
+                hour?: string;
+                salesCents?: number;
+                orderCount?: number;
+            }[];
+        };
+        PhotoStat: {
+            photoId?: components["schemas"]["Uuid"];
+            revenueCents?: number;
+            views?: number;
+            sales?: number;
+        };
+        PhotographerStats: {
+            totalPhotos: number;
+            totalSales: number;
+            grossEarningsCents: number;
+            pendingPayoutCents: number;
+            paidPayoutsCents: number;
+            conversionRate: number;
+            faceMatchAppearanceRate: number;
+            topPhotos: components["schemas"]["PhotoStat"][];
+            bottomPhotos: components["schemas"]["PhotoStat"][];
+            trafficSources: {
+                source?: string;
+                views?: number;
+            }[];
+            timeseries: {
+                day?: string;
+                views?: number;
+                salesCents?: number;
+            }[];
         };
         PayoutSummary: {
             payoutId: components["schemas"]["Uuid"];
@@ -3132,6 +3338,276 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    getAdminHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Health metrics. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        buildSha: string;
+                        uptimeSeconds: number;
+                        queueDepth: number | null;
+                        dbLatencyMs: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getModerationQueue: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                severity?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated moderation queue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            photoId?: components["schemas"]["Uuid"];
+                            eventId?: components["schemas"]["Uuid"];
+                            photographerUserId?: components["schemas"]["Uuid"];
+                            flagCount?: number;
+                            /** Format: date-time */
+                            lastFlaggedAt?: string | null;
+                            /** @enum {string} */
+                            moderationStatus?: "visible" | "hidden" | "deleted";
+                            reasons?: string[];
+                            /** Format: date-time */
+                            createdAt?: string;
+                        }[];
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    bulkModerate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    action: "hide" | "show" | "delete";
+                    photoIds: components["schemas"]["Uuid"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Bulk result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        updated: number;
+                        failed: components["schemas"]["Uuid"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getEventStats: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event stats. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventStats"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getEventStatsCsv: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event stats as CSV. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getPhotographerStats: {
+        parameters: {
+            query?: {
+                range?: "7d" | "30d" | "90d" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Photographer stats. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotographerStats"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getPhotographerStatsCsv: {
+        parameters: {
+            query?: {
+                range?: "7d" | "30d" | "90d" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Photographer stats as CSV. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createAuditExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: date-time */
+                    from?: string;
+                    /** Format: date-time */
+                    to?: string;
+                    actorId?: components["schemas"]["Uuid"];
+                    action?: string;
+                    targetType?: string;
+                    targetId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Export job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        jobId: components["schemas"]["Uuid"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getAuditExportStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Export status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "pending" | "running" | "ready" | "failed";
+                        rowCount: number | null;
+                        /** Format: uri */
+                        downloadUrl?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listAuditLog: {
