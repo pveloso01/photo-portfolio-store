@@ -1067,6 +1067,247 @@ paths:
                 $ref: '#/components/schemas/BiometricExport'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/ServerError' }
+  /v1/consents/biometric/disclosure:
+    get:
+      operationId: getBiometricDisclosure
+      tags: [compliance]
+      summary: Statutory biometric disclosure text (BIPA 15(a) / informed consent)
+      description: Public read. Returns the active disclosure document the subject must read before a covered-jurisdiction enrolment proceeds.
+      parameters:
+        - name: jurisdiction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [eu_gdpr, br_lgpd, us_bipa, us_ccpa, other]
+        - name: locale
+          in: query
+          required: false
+          schema: { type: string, minLength: 2, maxLength: 16 }
+      responses:
+        '200':
+          description: Active disclosure document.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, locale, title, bodyMarkdown, jurisdiction]
+                properties:
+                  version: { type: string }
+                  locale: { type: string }
+                  title: { type: string }
+                  bodyMarkdown: { type: string }
+                  jurisdiction: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/takedowns:
+    post:
+      operationId: submitTakedown
+      tags: [compliance]
+      summary: Submit a takedown request (anonymous; email-verified)
+      description: Anonymous-allowed, rate-limited 5 per IP per hour. Creates a request and emails the subject a verification link.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectEmail, reason, legalBasis]
+              properties:
+                subjectEmail: { type: string, format: email, maxLength: 320 }
+                reason: { type: string, enum: [lgpd, gdpr, bipa, copyright, other] }
+                legalBasis: { type: string, minLength: 1, maxLength: 2000 }
+                photoIds:
+                  type: array
+                  items: { type: string, format: uuid }
+                  maxItems: 500
+                evidenceUrl: { type: string, format: uri, maxLength: 1000 }
+                notes: { type: string, maxLength: 2000 }
+      responses:
+        '202':
+          description: Request accepted; verification email sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [trackingId]
+                properties:
+                  trackingId: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/takedowns/{id}/verify:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      operationId: verifyTakedown
+      tags: [compliance]
+      summary: Consume the email-verification token for a takedown request
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 256 }
+      responses:
+        '200':
+          description: Verified; request advanced to the admin queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [verifying] }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410':
+          description: Token expired.
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/takedowns/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      operationId: getTakedownStatus
+      tags: [compliance]
+      summary: Token-gated subject view of a takedown request status
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 256 }
+      responses:
+        '200':
+          description: Takedown status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, receivedAt, slaDueAt, fulfilledAt]
+                properties:
+                  status: { type: string }
+                  receivedAt: { type: string, format: date-time }
+                  slaDueAt: { type: string, format: date-time }
+                  fulfilledAt: { type: string, format: date-time, nullable: true }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/admin/takedowns:
+    get:
+      operationId: listAdminTakedowns
+      tags: [admin]
+      summary: List takedown requests (admin:moderate)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [received, verifying, fulfilled, rejected] }
+        - name: overdue
+          in: query
+          required: false
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Takedown queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, subjectEmail, reason, status, slaDueAt, receivedAt]
+                      properties:
+                        id: { type: string, format: uuid }
+                        subjectEmail: { type: string }
+                        reason: { type: string }
+                        status: { type: string }
+                        slaDueAt: { type: string, format: date-time }
+                        receivedAt: { type: string, format: date-time }
+                        fulfilledAt: { type: string, format: date-time, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/admin/takedowns/{id}/fulfill:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      operationId: fulfillTakedown
+      tags: [admin]
+      summary: Fulfil a takedown by purging the approved photos (admin:moderate)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approvedPhotoIds]
+              properties:
+                approvedPhotoIds:
+                  type: array
+                  items: { type: string, format: uuid }
+                  minItems: 1
+                  maxItems: 500
+                notes: { type: string, maxLength: 2000 }
+      responses:
+        '200':
+          description: Fulfilment result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, fulfilled, failed]
+                properties:
+                  status: { type: string, enum: [fulfilled] }
+                  fulfilled:
+                    type: array
+                    items: { type: string, format: uuid }
+                  failed:
+                    type: array
+                    items: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /v1/admin/takedowns/{id}/reject:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      operationId: rejectTakedown
+      tags: [admin]
+      summary: Reject a takedown request (admin:moderate)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rejectionReason]
+              properties:
+                rejectionReason: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '200':
+          description: Rejection recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [rejected] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
 
   /v1/me/kyc/start:
     post:

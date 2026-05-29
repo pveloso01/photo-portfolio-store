@@ -7,11 +7,15 @@ import pino from 'pino';
 
 import { db } from '../lib/db.js';
 import { qdrant } from '../lib/qdrant.js';
+import { runBipaRetentionDestruction } from './bipa-retention.js';
 import { triggerPayoutRun } from './payouts.js';
 import { runRetentionPass } from './retention.js';
+import { runTakedownSlaCheck } from './takedown-sla.js';
 
 const log = pino({ name: 'retention-scheduler' });
 const payoutLog = pino({ name: 'payout-scheduler' });
+const slaLog = pino({ name: 'takedown-sla' });
+const bipaLog = pino({ name: 'bipa-retention' });
 
 /**
  * Wire up cron jobs and return the live handles. Caller is responsible for
@@ -56,5 +60,29 @@ export const startSchedulers = (): Cron[] => {
     }
   });
 
-  return [retentionJob, payoutJob];
+  // Takedown SLA alert: hourly sweep. Each overdue row emits a structured
+  // warn log that the on-call alerting layer matches on
+  // (action='takedown.sla_breach'). 24h SLA is enforced by the DB trigger.
+  const slaJob = new Cron('0 * * * *', { name: 'takedown-sla-check', protect: true }, async () => {
+    try {
+      const result = await runTakedownSlaCheck(db, slaLog);
+      slaLog.info({ overdueCount: result.overdueCount }, 'takedown sla sweep complete');
+    } catch (err) {
+      slaLog.error({ err }, 'takedown sla sweep failed');
+    }
+  });
+
+  // BIPA retention destruction: daily at 04:00 UTC. Drops face_vectors +
+  // Qdrant collections (when no other active subject still references the
+  // event) and revokes consents whose statutory retention window has expired.
+  const bipaJob = new Cron('0 4 * * *', { name: 'bipa-retention', protect: true }, async () => {
+    try {
+      const result = await runBipaRetentionDestruction(db, qdrant);
+      bipaLog.info({ result }, 'bipa retention destruction complete');
+    } catch (err) {
+      bipaLog.error({ err }, 'bipa retention destruction failed');
+    }
+  });
+
+  return [retentionJob, payoutJob, slaJob, bipaJob];
 };

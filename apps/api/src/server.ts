@@ -12,16 +12,19 @@ import adminModerationRoutes from './routes/admin/moderation.js';
 import adminOrderSplitsRoutes from './routes/admin/order-splits.js';
 import adminPayoutRetryRoutes from './routes/admin/payout-retry.js';
 import adminRefundsRoutes from './routes/admin/refunds.js';
+import adminTakedownRoutes from './routes/admin/takedowns.js';
 import authPasswordlessRoutes from './routes/auth-passwordless.js';
 import authRoutes from './routes/auth.js';
 import bundlesRoutes from './routes/bundles.js';
 import cartRoutes from './routes/cart.js';
 import checkoutRoutes from './routes/checkout.js';
+import consentDisclosureRoutes from './routes/consent-disclosure.js';
 import consentRoutes from './routes/consents.js';
 import downloadsRoutes from './routes/downloads.js';
 import eventStatsRoutes from './routes/event-stats.js';
 import eventsRoutes from './routes/events.js';
 import internalPayoutsRoutes from './routes/internal/payouts.js';
+import meBiometricDataRoutes from './routes/me-biometric-data.js';
 import meKycRoutes from './routes/me-kyc.js';
 import mePayoutsRoutes from './routes/me-payouts.js';
 import mePhotographerRoutes from './routes/me-photographer.js';
@@ -30,6 +33,7 @@ import productsRoutes from './routes/products.js';
 import refundsRoutes from './routes/refunds.js';
 import searchFaceRoutes from './routes/search-face.js';
 import searchRoutes from './routes/search.js';
+import takedownRoutes from './routes/takedowns.js';
 import uploadsRoutes from './routes/uploads.js';
 import stripeWebhookRoutes from './routes/webhooks-stripe.js';
 import { seedPlatformLedgerAccounts } from './services/ledger.js';
@@ -98,6 +102,8 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   // their own consent/event gating, not RBAC).
   await app.register(consentRoutes);
   await app.register(searchFaceRoutes);
+  // M3 F3.8 — statutory biometric disclosure text (public read).
+  await app.register(consentDisclosureRoutes);
   // F1.29 / F1.30 / F1.31 — Stripe checkout, webhook receiver, download delivery.
   await app.register(checkoutRoutes);
   await app.register(stripeWebhookRoutes);
@@ -127,6 +133,12 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   await app.register(adminHealthRoutes);
   await app.register(adminModerationRoutes);
   await app.register(adminAuditExportRoutes);
+  // M3 F3.4 — public takedown submission/verify/status (anonymous, token-gated).
+  await app.register(takedownRoutes);
+  // M3 F3.5 — admin takedown queue + fulfill/reject (admin:moderate).
+  await app.register(adminTakedownRoutes);
+  // M3 F3.6 — right-to-know self-service biometric data export (owner-gated).
+  await app.register(meBiometricDataRoutes);
   // M2 F2.12 — internal cron-trigger for the weekly payout run (secret-gated).
   await app.register(internalPayoutsRoutes);
 

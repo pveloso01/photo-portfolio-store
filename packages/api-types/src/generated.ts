@@ -749,6 +749,139 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/consents/biometric/disclosure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Statutory biometric disclosure text (BIPA 15(a) / informed consent)
+         * @description Public read. Returns the active disclosure document the subject must read before a covered-jurisdiction enrolment proceeds.
+         */
+        get: operations["getBiometricDisclosure"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/takedowns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a takedown request (anonymous; email-verified)
+         * @description Anonymous-allowed, rate-limited 5 per IP per hour. Creates a request and emails the subject a verification link.
+         */
+        post: operations["submitTakedown"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/takedowns/{id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        /** Consume the email-verification token for a takedown request */
+        get: operations["verifyTakedown"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/takedowns/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        /** Token-gated subject view of a takedown request status */
+        get: operations["getTakedownStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/takedowns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List takedown requests (admin:moderate) */
+        get: operations["listAdminTakedowns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/takedowns/{id}/fulfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fulfil a takedown by purging the approved photos (admin:moderate) */
+        post: operations["fulfillTakedown"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/takedowns/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a takedown request (admin:moderate) */
+        post: operations["rejectTakedown"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/kyc/start": {
         parameters: {
             query?: never;
@@ -3038,6 +3171,266 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    getBiometricDisclosure: {
+        parameters: {
+            query?: {
+                jurisdiction?: "eu_gdpr" | "br_lgpd" | "us_bipa" | "us_ccpa" | "other";
+                locale?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active disclosure document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        version: string;
+                        locale: string;
+                        title: string;
+                        bodyMarkdown: string;
+                        jurisdiction: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    submitTakedown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    subjectEmail: string;
+                    /** @enum {string} */
+                    reason: "lgpd" | "gdpr" | "bipa" | "copyright" | "other";
+                    legalBasis: string;
+                    photoIds?: string[];
+                    /** Format: uri */
+                    evidenceUrl?: string;
+                    notes?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Request accepted; verification email sent. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        trackingId: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    verifyTakedown: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified; request advanced to the admin queue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "verifying";
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Token expired. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            500: components["responses"]["ServerError"];
+        };
+    };
+    getTakedownStatus: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Takedown status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                        /** Format: date-time */
+                        receivedAt: string;
+                        /** Format: date-time */
+                        slaDueAt: string;
+                        /** Format: date-time */
+                        fulfilledAt: string | null;
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    listAdminTakedowns: {
+        parameters: {
+            query?: {
+                status?: "received" | "verifying" | "fulfilled" | "rejected";
+                overdue?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Takedown queue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            subjectEmail: string;
+                            reason: string;
+                            status: string;
+                            /** Format: date-time */
+                            slaDueAt: string;
+                            /** Format: date-time */
+                            receivedAt: string;
+                            /** Format: date-time */
+                            fulfilledAt?: string | null;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    fulfillTakedown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    approvedPhotoIds: string[];
+                    notes?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Fulfilment result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "fulfilled";
+                        fulfilled: string[];
+                        failed: string[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+            500: components["responses"]["ServerError"];
+        };
+    };
+    rejectTakedown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    rejectionReason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Rejection recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "rejected";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
             500: components["responses"]["ServerError"];
         };
     };

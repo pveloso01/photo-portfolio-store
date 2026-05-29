@@ -59,8 +59,10 @@ export interface RbacPluginOptions {
 declare module 'fastify' {
   interface FastifyRequest {
     // Set by the auth plugin. Optional here so this file does not assume
-    // auth has registered yet; runtime checks enforce presence.
-    user?: { id: string; role: UserRole };
+    // auth has registered yet; runtime checks enforce presence. `email` is
+    // present only when the auth layer carries it (self-service routes use it
+    // for confirmation mail + anonymous-grant email matching).
+    user?: { id: string; role: UserRole; email?: string };
     // Populated by this plugin on first access for the current request.
     permissions?: ReadonlyArray<Permission>;
     // Per-request memo of event-member lookups.
@@ -111,6 +113,13 @@ const DEFAULT_EXEMPT: ReadonlyArray<RegExp> = [
   /^\/v1\/me\/photographer\/stats(\.csv)?$/,
   // M2 F2.12 — internal cron-trigger; machine-to-machine, secret-gated (not RBAC).
   /^\/v1\/internal\/payouts\/run$/,
+  // M3 F3.4 — public takedown submission/verify/status; anonymous-allowed,
+  // token-gated within the handler (not RBAC).
+  /^\/v1\/takedowns(\/.*)?$/,
+  // M3 F3.6 — right-to-know self-service route; owner = request.user.
+  /^\/v1\/me\/biometric-data$/,
+  // M3 F3.8 — statutory disclosure text; public read.
+  /^\/v1\/consents\/biometric\/disclosure$/,
 ];
 
 // ---------- Helpers ----------

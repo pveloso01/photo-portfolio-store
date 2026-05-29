@@ -93,6 +93,15 @@ export const consents = app.table(
     // F1.33 — TTL for biometric consents (grantedAt + 24h). Null = no expiry
     // (terms_of_service / privacy_policy / marketing scopes).
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }),
+    // F3.8 — ISO 3166-2 region (e.g. 'US-IL') for per-state BIPA gating.
+    region: text('region'),
+    // F3.8 — signed-consent payload (statutory disclosure hash + timestamp).
+    signaturePayload: jsonb('signature_payload'),
+    // F3.8 — computed destruction deadline (3y IL, after 1y inactivity TX).
+    retentionWindowEndsAt: timestamp('retention_window_ends_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -114,6 +123,10 @@ export const consents = app.table(
     eventScopeIdx: index('consents_event_scope_idx')
       .on(table.eventId, table.scope)
       .where(sql`${table.eventId} is not null`),
+    // F3.8 — drives the BIPA retention-destruction cron.
+    retentionWindowIdx: index('consents_retention_window_idx')
+      .on(table.retentionWindowEndsAt)
+      .where(sql`${table.retentionWindowEndsAt} is not null and ${table.revokedAt} is null`),
   }),
 );
 
@@ -220,6 +233,79 @@ export const auditExports = app.table(
   }),
 );
 
+// ---------- takedown_requests ----------
+// F3.3 — legally-binding takedown requests (LGPD Art. 18, GDPR Art. 17, BIPA
+// 15(a)). 24h SLA enforced by trigger + cron alert. audit_trail is append-only
+// (app-layer; trigger TBD).
+
+export const takedownReason = app.enum('takedown_reason', [
+  'lgpd',
+  'gdpr',
+  'bipa',
+  'copyright',
+  'other',
+]);
+
+export const takedownStatus = app.enum('takedown_status', [
+  'received',
+  'verifying',
+  'fulfilled',
+  'rejected',
+]);
+
+export const takedownRequests = app.table(
+  'takedown_requests',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    subjectEmail: text('subject_email').notNull(),
+    subjectUserId: uuid('subject_user_id'),
+    photoIds: text('photo_ids').array().notNull().default(sql`'{}'`),
+    reason: takedownReason('reason').notNull(),
+    legalBasis: text('legal_basis').notNull(),
+    evidenceUrl: text('evidence_url'),
+    status: takedownStatus('status').notNull().default('received'),
+    slaDueAt: timestamp('sla_due_at', { withTimezone: true, mode: 'date' }).notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .default(sql`now()`),
+    verifiedAt: timestamp('verified_at', { withTimezone: true, mode: 'date' }),
+    fulfilledAt: timestamp('fulfilled_at', { withTimezone: true, mode: 'date' }),
+    fulfilledBy: uuid('fulfilled_by'),
+    rejectionReason: text('rejection_reason'),
+    notes: text('notes'),
+    auditTrail: jsonb('audit_trail').notNull().default(sql`'[]'::jsonb`),
+    submitterIpHash: text('submitter_ip_hash'),
+  },
+  (table) => ({
+    statusSlaIdx: index('takedown_requests_status_sla_idx').on(table.status, table.slaDueAt),
+    subjectEmailIdx: index('takedown_requests_subject_email_idx').on(table.subjectEmail),
+    subjectUserIdx: index('takedown_requests_subject_user_idx')
+      .on(table.subjectUserId)
+      .where(sql`${table.subjectUserId} is not null`),
+  }),
+);
+
+// F3.4 — email-verification tokens. token_hash is sha256(token); the raw token
+// is emailed once and never persisted.
+export const takedownVerificationTokens = app.table(
+  'takedown_verification_tokens',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    trackingId: uuid('tracking_id')
+      .notNull()
+      .references(() => takedownRequests.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'date' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (table) => ({
+    trackingIdx: index('takedown_verification_tokens_tracking_idx').on(table.trackingId),
+  }),
+);
+
 // ---------- Grouped export ----------
 
 export const tables = {
@@ -227,4 +313,6 @@ export const tables = {
   auditLog,
   consentPolicyVersions,
   auditExports,
+  takedownRequests,
+  takedownVerificationTokens,
 };

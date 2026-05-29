@@ -23,8 +23,8 @@ import { hashIp } from '../lib/ip-hash.js';
 import {
   ConsentValidationError,
   type GrantConsentInput,
+  cascadeErasure,
   grantConsent,
-  revokeConsent,
 } from '../services/consents.js';
 
 const COOKIE_PREFIX = 'pps_consent_';
@@ -257,7 +257,11 @@ const consentRoutes = async (
     try {
       const ipHash = hashIp(getClientIp(request));
       const userAgent = getUserAgent(request);
-      const result = await revokeConsent(db, id, { ipHash, userAgent });
+      // F3.7 — full erasure cascade: revoke + Qdrant + face_vectors + search
+      // sessions + search matches + confirmation email when we know the
+      // subject's address (authed user). Same 204 contract as M1.
+      const subjectEmail = request.user?.email;
+      const result = await cascadeErasure(db, id, { ipHash, userAgent, subjectEmail });
       return reply.code(204).send({ result });
     } catch (err) {
       if (err instanceof ConsentValidationError) return mapConsentError(reply, err);

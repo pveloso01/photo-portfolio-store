@@ -17,9 +17,10 @@
 import { createHash } from 'node:crypto';
 import type { DbClient } from '@pkg/db';
 import { schema } from '@pkg/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { writeAudit } from '../lib/audit.js';
+import { sendMail as defaultSendMail } from '../lib/email.js';
 import { type PolicyJurisdiction, isVersionSupported } from '../lib/policy-versions.js';
 import { type SoftBindResult, softBindMatch } from '../lib/soft-bind.js';
 
@@ -526,6 +527,113 @@ export const revokeConsent = async (
   });
 
   return { consentId: row.id, vectorsPurged, collectionDropped };
+};
+
+// ---------- F3.7 right-to-erasure cascade ----------
+//
+// Wraps revokeConsent and additionally deletes search_sessions + search_matches
+// belonging to the consent, then emails the subject a confirmation listing
+// every artifact removed. search_matches cascade-delete via the FK on
+// search_sessions, so we only need to delete the sessions.
+//
+// The route layer keeps the 204 No Content response (the M1 contract) — the
+// work runs synchronously and is complete by the time we reply, so an async
+// "202 + tracking id" envelope would be misleading. The cascade scope is
+// documented in docs/compliance/walkthrough.md.
+
+export interface CascadeErasureContext extends RevokeContext {
+  subjectEmail?: string;
+}
+
+export interface CascadeErasureResult extends RevokeResult {
+  sessionsDeleted: number;
+  matchesDeleted: number;
+  emailSent: boolean;
+}
+
+export type CascadeMailerFn = typeof defaultSendMail;
+
+export const cascadeErasure = async (
+  db: DbClient,
+  consentId: string,
+  context: CascadeErasureContext = {},
+  deps: QdrantDeleterDeps = {},
+  mailer: CascadeMailerFn = defaultSendMail,
+): Promise<CascadeErasureResult> => {
+  // Run the M1 revoke (consent flip + qdrant + face_vectors purge).
+  const base = await revokeConsent(db, consentId, context, deps);
+
+  // Delete this consent's search sessions; matches cascade-delete via FK.
+  const { searchSessions, searchMatches } = schema.search.tables;
+  let matchesDeleted = 0;
+  let sessionsDeleted = 0;
+  try {
+    const sessions = await db
+      .select({ id: searchSessions.id })
+      .from(searchSessions)
+      .where(eq(searchSessions.consentId, consentId));
+    sessionsDeleted = sessions.length;
+    if (sessions.length > 0) {
+      // Some shims (and prod) honor the cascade; do an explicit match delete
+      // first so callers without FK enforcement (test shim) still observe the
+      // documented contract.
+      const ids = sessions.map((s) => s.id);
+      await db.delete(searchMatches).where(inArray(searchMatches.sessionId, ids));
+      matchesDeleted = ids.length; // count of sessions whose matches were dropped
+      await db.delete(searchSessions).where(eq(searchSessions.consentId, consentId));
+    }
+  } catch (err) {
+    await writeAudit(db, {
+      action: 'biometric.erasure.sessions_purge_failed',
+      actorKind: 'system',
+      targetKind: 'consent',
+      targetId: consentId,
+      payload: { error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+
+  let emailSent = false;
+  if (context.subjectEmail) {
+    try {
+      await mailer({
+        to: context.subjectEmail,
+        subject: 'Your biometric data has been erased',
+        text: [
+          `Consent id: ${consentId}`,
+          `Face vectors purged: ${base.vectorsPurged}`,
+          `Qdrant collection dropped: ${base.collectionDropped ? 'yes' : 'no'}`,
+          `Search sessions deleted: ${sessionsDeleted}`,
+          'You may submit another consent grant at any time to use face search again.',
+        ].join('\n'),
+        html: `<p>Consent id: <code>${consentId}</code></p>
+<ul>
+  <li>Face vectors purged: ${base.vectorsPurged}</li>
+  <li>Qdrant collection dropped: ${base.collectionDropped ? 'yes' : 'no'}</li>
+  <li>Search sessions deleted: ${sessionsDeleted}</li>
+</ul>`,
+      });
+      emailSent = true;
+    } catch {
+      // best-effort; never block erasure on mailer failure.
+    }
+  }
+
+  await writeAudit(db, {
+    action: 'biometric.erasure.cascade',
+    actorKind: 'user',
+    targetKind: 'consent',
+    targetId: consentId,
+    ipHash: context.ipHash,
+    payload: {
+      vectorsPurged: base.vectorsPurged,
+      collectionDropped: base.collectionDropped,
+      sessionsDeleted,
+      matchesDeleted,
+      emailSent,
+    },
+  });
+
+  return { ...base, sessionsDeleted, matchesDeleted, emailSent };
 };
 
 // ---------- Re-exports ----------
