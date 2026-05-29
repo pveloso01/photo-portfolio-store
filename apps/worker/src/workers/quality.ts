@@ -6,8 +6,9 @@
 //   - near_duplicate: another photo in the SAME event whose phash is within the
 //     configured Hamming distance; both photos get near_duplicate_of + a shared
 //     duplicate_group_id.
-// Eyes-closed is delegated to the inference /quality endpoint (later increment)
-// and is intentionally absent here.
+//   - eyes_closed: delegated to the Python inference /quality endpoint (EAR on
+//     facial landmarks). Best-effort — an inference outage never blocks the
+//     blur + near-duplicate signals.
 //
 // Flags are advisory only — nothing is hidden. The job is idempotent: re-running
 // on the same photo overwrites the flags deterministically (phash + blur_score
@@ -25,6 +26,7 @@ import sharp from 'sharp';
 import { writeWorkerAudit } from '../lib/audit.js';
 import { db as defaultDb } from '../lib/db.js';
 import { workerEnv } from '../lib/env.js';
+import { type QualityResponse, scoreQuality } from '../lib/inference-client.js';
 import { logger } from '../lib/logger.js';
 import { analyzeImage, hammingDistance } from '../lib/quality.js';
 import { buckets as defaultBuckets, getS3 } from '../lib/storage.js';
@@ -32,10 +34,15 @@ import type { QualityJobData } from '../queues/quality.js';
 
 const { photos } = schema.photos;
 
+export interface EyesClosedFlag {
+  faces: number;
+}
+
 export interface QualityFlags {
   blur: boolean;
   near_duplicate_of?: string;
   duplicate_group_id?: string;
+  eyes_closed?: EyesClosedFlag;
 }
 
 export interface QualityThresholds {
@@ -43,12 +50,21 @@ export interface QualityThresholds {
   hammingMax: number;
 }
 
+// Injectable so tests don't hit the network; defaults to the inference client.
+export type EyesClosedScorer = (
+  imageBytes: Buffer,
+  options?: { filename?: string; contentType?: string },
+) => Promise<QualityResponse>;
+
 export interface QualityDeps {
   db?: DbClient;
   s3?: S3Client;
   buckets?: { originals: string };
   sharpFactory?: typeof sharp;
   thresholds?: QualityThresholds;
+  // Eyes-closed scorer (Python inference /quality). Best-effort: a failure or
+  // omission leaves quality_flags.eyes_closed unset; blur + near-dup still run.
+  eyesClosedScorer?: EyesClosedScorer;
 }
 
 export interface QualityResult {
@@ -126,6 +142,20 @@ export const processQuality = async (
 
     const { blurScore, phash } = await analyzeImage(buffer, sharpFn);
 
+    // Eyes-closed via the Python inference /quality endpoint. Best-effort: an
+    // inference outage must not block the blur + near-duplicate signals.
+    let eyesClosed: EyesClosedFlag | undefined;
+    const scorer = deps.eyesClosedScorer ?? scoreQuality;
+    try {
+      const q = await scorer(buffer, { filename: `${photoId}.jpg` });
+      if (q.eyes_closed_faces > 0) eyesClosed = { faces: q.eyes_closed_faces };
+    } catch (err) {
+      logger.warn(
+        { photoId, err: err instanceof Error ? err.message : String(err) },
+        'quality: eyes-closed scoring failed (continuing)',
+      );
+    }
+
     // Near-duplicate scan: other already-scored photos in the same event.
     const candidates = (await dbClient
       .select({
@@ -156,6 +186,7 @@ export const processQuality = async (
     }
 
     const flags: QualityFlags = { blur: blurScore < blurThreshold };
+    if (eyesClosed) flags.eyes_closed = eyesClosed;
     if (nearest) {
       // Reuse the matched photo's existing group, else mint a new one and stamp
       // it back onto the match so both rows share the duplicate_group_id.
@@ -167,6 +198,8 @@ export const processQuality = async (
         blur: nearest.flags?.blur ?? false,
         near_duplicate_of: photoId,
         duplicate_group_id: groupId,
+        // Preserve the matched photo's own eyes-closed assessment.
+        ...(nearest.flags?.eyes_closed ? { eyes_closed: nearest.flags.eyes_closed } : {}),
       };
       await dbClient
         .update(photos)
@@ -193,6 +226,7 @@ export const processQuality = async (
         blurScore: Number(blurScore.toFixed(2)),
         blur: flags.blur,
         nearDuplicateOf: flags.near_duplicate_of ?? null,
+        eyesClosedFaces: flags.eyes_closed?.faces ?? 0,
       },
     });
 

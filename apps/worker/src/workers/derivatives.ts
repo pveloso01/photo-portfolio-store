@@ -8,7 +8,7 @@ import { Buffer } from 'node:buffer';
 import { GetObjectCommand, PutObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import { type DbClient, schema } from '@pkg/db';
 import * as Sentry from '@sentry/node';
-import type { Job, Processor } from 'bullmq';
+import type { Job, Processor, Queue } from 'bullmq';
 import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 
@@ -16,7 +16,8 @@ import { writeWorkerAudit } from '../lib/audit.js';
 import { db as defaultDb } from '../lib/db.js';
 import { logger } from '../lib/logger.js';
 import { buckets as defaultBuckets, getS3 } from '../lib/storage.js';
-import type { DerivativesJobData } from '../queues/index.js';
+import { DEFAULT_JOB_OPTIONS, type DerivativesJobData } from '../queues/index.js';
+import { type QualityJobData, getQualityQueue } from '../queues/quality.js';
 
 const { photos, photoDerivatives } = schema.photos;
 const { eventSettings } = schema.events;
@@ -39,6 +40,8 @@ export interface DerivativesDeps {
   buckets?: { originals: string; derivatives: string };
   // Allow tests to inject a sharp constructor; defaults to the real one.
   sharpFactory?: typeof sharp;
+  // F3.12 — quality scoring queue; enqueued once derivatives are ready.
+  qualityQueue?: Queue<QualityJobData>;
 }
 
 export interface DerivativesResult {
@@ -198,6 +201,23 @@ export const processDerivatives = async (
       eventId: row.eventId,
       payload: { kinds: produced, width: originalWidth, height: originalHeight },
     });
+
+    // F3.12 — enqueue quality scoring now that derivatives exist. Stable job id
+    // keeps it idempotent across derivative retries. Best-effort: a queue
+    // failure must not fail the (already-complete) derivative job.
+    try {
+      const qualityQueue = deps.qualityQueue ?? getQualityQueue();
+      await qualityQueue.add(
+        'quality',
+        { photoId },
+        { ...DEFAULT_JOB_OPTIONS, jobId: `quality:${photoId}` },
+      );
+    } catch (err) {
+      logger.warn(
+        { photoId, err: err instanceof Error ? err.message : String(err) },
+        'derivatives: failed to enqueue quality job (continuing)',
+      );
+    }
 
     logger.info({ photoId, kinds: produced }, 'derivatives: complete');
     return { status: 'ready', derivatives: produced };

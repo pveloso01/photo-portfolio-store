@@ -28,6 +28,7 @@ import meBiometricDataRoutes from './routes/me-biometric-data.js';
 import meKycRoutes from './routes/me-kyc.js';
 import mePayoutsRoutes from './routes/me-payouts.js';
 import mePhotographerRoutes from './routes/me-photographer.js';
+import photoQualityRoutes from './routes/photo-quality.js';
 import pricingRoutes from './routes/pricing.js';
 import productsRoutes from './routes/products.js';
 import refundsRoutes from './routes/refunds.js';
@@ -121,6 +122,8 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   await app.register(mePayoutsRoutes);
   // M3 F3.10 — photographer dashboard analytics (self-service "me" routes).
   await app.register(mePhotographerRoutes);
+  // M3 F3.13 — per-photo quality detail (owner-gated within handler).
+  await app.register(photoQualityRoutes);
   // M3 F3.9 — organizer event analytics (event-scoped commerce:read_orders).
   await app.register(eventStatsRoutes);
   // M2 F2.10 — admin order split view. M2 F2.7 — admin refund decision.

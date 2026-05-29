@@ -108,11 +108,20 @@ const makeDb = (photoRow: Record<string, unknown>, candidates: Record<string, un
 const buildJob = (photoId: string): Job<QualityJobData> =>
   ({ data: { photoId }, opts: { attempts: 3 }, attemptsMade: 0 }) as unknown as Job<QualityJobData>;
 
+const noEyesClosed = vi.fn(async () => ({
+  faces: 1,
+  eyes_closed_faces: 0,
+  ear_threshold: 0.21,
+  faces_detail: [],
+  model_version: 'stub',
+}));
+
 const baseDeps = {
   s3: makeS3() as never,
   buckets: { originals: 'originals' },
   sharpFactory: makeSharpStub(),
   thresholds: { blurThreshold: 50, hammingMax: 6 },
+  eyesClosedScorer: noEyesClosed,
 };
 
 let processQuality: typeof import('../src/workers/quality.js').processQuality;
@@ -182,6 +191,45 @@ describe('processQuality', () => {
     expect(selfFlags.near_duplicate_of).toBe('p1');
     // Same group id stamped on both rows.
     expect(matchFlags.duplicate_group_id).toBe(selfFlags.duplicate_group_id);
+  });
+
+  it('sets eyes_closed with the affected face count from the inference scorer', async () => {
+    const photo = { id: 'p4', eventId: 'e1', originalObjectKey: 'originals/e1/p4.jpg' };
+    const { db, updates } = makeDb(photo, []);
+    const eyesClosedScorer = vi.fn(async () => ({
+      faces: 3,
+      eyes_closed_faces: 2,
+      ear_threshold: 0.21,
+      faces_detail: [],
+      model_version: 'stub',
+    }));
+    const result = await processQuality(buildJob('p4'), {
+      ...baseDeps,
+      sharpFactory: makeSharpStub(),
+      s3: makeS3() as never,
+      db,
+      eyesClosedScorer,
+    });
+    expect(result.flags?.eyes_closed).toEqual({ faces: 2 });
+    const selfFlags = updates[0]?.set.qualityFlags as Record<string, unknown>;
+    expect(selfFlags.eyes_closed).toEqual({ faces: 2 });
+  });
+
+  it('continues without eyes_closed when the inference scorer throws', async () => {
+    const photo = { id: 'p5', eventId: 'e1', originalObjectKey: 'originals/e1/p5.jpg' };
+    const { db } = makeDb(photo, []);
+    const eyesClosedScorer = vi.fn(async () => {
+      throw new Error('inference down');
+    });
+    const result = await processQuality(buildJob('p5'), {
+      ...baseDeps,
+      sharpFactory: makeSharpStub(),
+      s3: makeS3() as never,
+      db,
+      eyesClosedScorer,
+    });
+    expect(result.status).toBe('scored');
+    expect(result.flags?.eyes_closed).toBeUndefined();
   });
 
   it('reuses an existing duplicate_group_id from the matched photo', async () => {

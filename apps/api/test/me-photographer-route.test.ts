@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const hoisted = vi.hoisted(() => ({ getPhotographerStats: vi.fn() }));
 
-vi.mock('@pkg/db', () => ({ createDbClient: () => ({}), schema: {} }));
+// schema.photos.photos must exist: the route transitively imports
+// photo-quality.js, which destructures `schema.photos` at module load.
+vi.mock('@pkg/db', () => ({ createDbClient: () => ({}), schema: { photos: { photos: {} } } }));
 vi.mock('../src/services/photographer-stats.js', () => ({
   getPhotographerStats: hoisted.getPhotographerStats,
 }));

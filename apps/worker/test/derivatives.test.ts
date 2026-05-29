@@ -84,16 +84,20 @@ describe('processDerivatives', () => {
     const db = buildDb();
     const s3 = buildS3();
     const sharpFactory = makeSharpStub();
+    const qualityQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
     const result = await processDerivatives(buildJob(), {
       db: db as never,
       s3: s3 as never,
       buckets: { originals: 'orig', derivatives: 'deriv' },
       sharpFactory,
+      qualityQueue: qualityQueue as never,
     });
 
     expect(result.status).toBe('ready');
     expect(result.derivatives).toEqual(['thumb', 'preview', 'web', 'full']);
+    // F3.12 — quality scoring enqueued after derivatives complete.
+    expect(qualityQueue.add).toHaveBeenCalledTimes(1);
 
     // 1 GET + 4 PUTs = 5 S3 sends.
     expect(s3.send).toHaveBeenCalledTimes(5);

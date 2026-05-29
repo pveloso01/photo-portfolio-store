@@ -1175,6 +1175,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/photographer/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's photos with advisory quality flags (F3.13)
+         * @description Owner-scoped photo list, optionally filtered by a single advisory quality flag. Flags are advisory and may include false positives; no photo is hidden automatically.
+         */
+        get: operations["listPhotographerPhotos"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/photos/{id}/quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Per-photo quality detail with explanations (F3.13)
+         * @description Raw quality scores, a plain-language explanation per active flag, and the near-duplicate group siblings. Owner-gated; 404 for missing or not-owned photos.
+         */
+        get: operations["getPhotoQuality"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/audit/export": {
         parameters: {
             query?: never;
@@ -3932,6 +3974,84 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listPhotographerPhotos: {
+        parameters: {
+            query?: {
+                quality_flag?: "blur" | "eyes_closed" | "near_duplicate";
+                event_id?: components["schemas"]["Uuid"];
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Photo list with quality flags. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        nextCursor: string | null;
+                        advisory: string;
+                        items: {
+                            photoId: components["schemas"]["Uuid"];
+                            eventId: components["schemas"]["Uuid"];
+                            status: string;
+                            hidden: boolean;
+                            blurScore: number | null;
+                            qualityFlags: {
+                                [key: string]: unknown;
+                            } | null;
+                            duplicateGroupId: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getPhotoQuality: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Photo quality detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        photoId: components["schemas"]["Uuid"];
+                        eventId: components["schemas"]["Uuid"];
+                        blurScore: number | null;
+                        phash: string | null;
+                        flags: {
+                            [key: string]: unknown;
+                        } | null;
+                        explanation: string[];
+                        duplicateGroupId: string | null;
+                        duplicateSiblings: components["schemas"]["Uuid"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     createAuditExport: {

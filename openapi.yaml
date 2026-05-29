@@ -1716,6 +1716,89 @@ paths:
             text/csv:
               schema: { type: string }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/me/photographer/photos:
+    get:
+      operationId: listPhotographerPhotos
+      tags: [compliance]
+      summary: List the caller's photos with advisory quality flags (F3.13)
+      description: >-
+        Owner-scoped photo list, optionally filtered by a single advisory
+        quality flag. Flags are advisory and may include false positives; no
+        photo is hidden automatically.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: quality_flag
+          in: query
+          required: false
+          schema: { type: string, enum: [blur, eyes_closed, near_duplicate] }
+        - name: event_id
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/Uuid' }
+        - { name: cursor, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Photo list with quality flags.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor, advisory]
+                properties:
+                  nextCursor: { type: string, nullable: true }
+                  advisory: { type: string }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [photoId, eventId, status, hidden, blurScore, qualityFlags, duplicateGroupId, createdAt]
+                      properties:
+                        photoId: { $ref: '#/components/schemas/Uuid' }
+                        eventId: { $ref: '#/components/schemas/Uuid' }
+                        status: { type: string }
+                        hidden: { type: boolean }
+                        blurScore: { type: number, nullable: true }
+                        qualityFlags: { type: object, nullable: true, additionalProperties: true }
+                        duplicateGroupId: { type: string, nullable: true }
+                        createdAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/photos/{id}/quality:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      operationId: getPhotoQuality
+      tags: [compliance]
+      summary: Per-photo quality detail with explanations (F3.13)
+      description: >-
+        Raw quality scores, a plain-language explanation per active flag, and
+        the near-duplicate group siblings. Owner-gated; 404 for missing or
+        not-owned photos.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Photo quality detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [photoId, eventId, blurScore, phash, flags, explanation, duplicateGroupId, duplicateSiblings]
+                properties:
+                  photoId: { $ref: '#/components/schemas/Uuid' }
+                  eventId: { $ref: '#/components/schemas/Uuid' }
+                  blurScore: { type: number, nullable: true }
+                  phash: { type: string, nullable: true }
+                  flags: { type: object, nullable: true, additionalProperties: true }
+                  explanation:
+                    type: array
+                    items: { type: string }
+                  duplicateGroupId: { type: string, nullable: true }
+                  duplicateSiblings:
+                    type: array
+                    items: { $ref: '#/components/schemas/Uuid' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /v1/admin/audit/export:
     post:
       operationId: createAuditExport

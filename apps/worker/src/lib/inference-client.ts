@@ -69,3 +69,47 @@ export const detectAndEmbed = async (
   }
   return (await res.body.json()) as DetectEmbedResponse;
 };
+
+export interface FaceQuality {
+  bbox: [number, number, number, number];
+  eyes_closed: boolean;
+  left_ear: number;
+  right_ear: number;
+}
+
+export interface QualityResponse {
+  faces: number;
+  eyes_closed_faces: number;
+  ear_threshold: number;
+  faces_detail: FaceQuality[];
+  model_version: string;
+}
+
+/**
+ * POST an image to the inference `/quality/` endpoint and return the per-face
+ * eyes-closed assessment. Throws on non-200; the caller decides whether to
+ * treat a failure as fatal (the quality worker treats it as best-effort).
+ */
+export const scoreQuality = async (
+  imageBytes: Buffer,
+  options: DetectAndEmbedOptions = {},
+): Promise<QualityResponse> => {
+  const env = getEnv();
+  const filename = options.filename ?? 'photo.jpg';
+  const contentType = options.contentType ?? 'image/jpeg';
+
+  const form = new FormData();
+  form.append('image', new Blob([imageBytes], { type: contentType }), filename);
+
+  const res = await request(`${env.INFERENCE_URL}/quality/`, {
+    method: 'POST',
+    body: form as unknown as Buffer,
+    headers: { 'X-API-Key': env.INFERENCE_API_KEY },
+  });
+
+  if (res.statusCode !== 200) {
+    const body = await res.body.text();
+    throw new Error(`inference /quality/ ${res.statusCode}: ${body}`);
+  }
+  return (await res.body.json()) as QualityResponse;
+};
