@@ -1032,6 +1032,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/events/{id}/roster/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse + validate a roster CSV, returning a preview (F4.5)
+         * @description Upload the roster as a raw text/csv body. Returns a previewId, the detected column map, a sample of valid rows, and per-row issues (invalid email, duplicate bib, missing required fields). Does not import.
+         */
+        post: operations["previewRoster"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/roster/import/{importId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+                importId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Commit a previewed roster import (F4.5)
+         * @description Inserts the previewed valid rows as participants (idempotent on (event, bib)).
+         */
+        post: operations["commitRoster"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/roster/imports/{importId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+                importId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Roster import report (F4.5) */
+        get: operations["getRosterImport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{orgId}/integrations": {
         parameters: {
             query?: never;
@@ -1375,6 +1440,40 @@ export interface components {
         IntegrationTestResult: {
             ok: boolean;
             error?: string;
+        };
+        RosterIssue: {
+            rowNumber: number;
+            /** @enum {string} */
+            reason: "invalid_email" | "duplicate_bib" | "missing_bib" | "missing_name";
+            detail: string;
+        };
+        RosterParticipant: {
+            rowNumber: number;
+            bib: string;
+            name: string;
+            email: string | null;
+            phone: string | null;
+            team: string | null;
+        };
+        RosterPreview: {
+            importId: components["schemas"]["Uuid"];
+            columns: string[];
+            totalRows: number;
+            validRows: number;
+            skippedRows: number;
+            sample: components["schemas"]["RosterParticipant"][];
+            issues: components["schemas"]["RosterIssue"][];
+        };
+        RosterImportReport: {
+            importId: components["schemas"]["Uuid"];
+            status: string;
+            filename?: string;
+            totalRows: number;
+            importedRows: number;
+            skippedRows: number;
+            /** Format: date-time */
+            createdAt?: string;
+            issues: components["schemas"]["RosterIssue"][];
         };
         Money: {
             /** @description Smallest currency unit (e.g. USD cents). */
@@ -3828,6 +3927,90 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
             500: components["responses"]["ServerError"];
+        };
+    };
+    previewRoster: {
+        parameters: {
+            query?: {
+                filename?: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "text/csv": string;
+            };
+        };
+        responses: {
+            /** @description Roster preview. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RosterPreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    commitRoster: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+                importId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Import report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RosterImportReport"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getRosterImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdParam"];
+                importId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Import record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RosterImportReport"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listIntegrations: {

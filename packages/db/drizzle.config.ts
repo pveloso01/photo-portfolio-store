@@ -13,6 +13,7 @@ export default defineConfig({
     './src/schema/commerce.ts',
     './src/schema/compliance.ts',
     './src/schema/integrations.ts',
+    './src/schema/participants.ts',
   ],
   out: './migrations',
   dbCredentials: { url: process.env.DATABASE_URL ?? '' },

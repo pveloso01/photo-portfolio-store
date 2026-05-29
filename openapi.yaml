@@ -1546,6 +1546,78 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '500': { $ref: '#/components/responses/ServerError' }
+  /v1/events/{id}/roster/preview:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      operationId: previewRoster
+      tags: [integrations]
+      summary: Parse + validate a roster CSV, returning a preview (F4.5)
+      description: >-
+        Upload the roster as a raw text/csv body. Returns a previewId, the
+        detected column map, a sample of valid rows, and per-row issues
+        (invalid email, duplicate bib, missing required fields). Does not import.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: filename, in: query, required: false, schema: { type: string, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Roster preview.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RosterPreview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/events/{id}/roster/import/{importId}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+      - name: importId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      operationId: commitRoster
+      tags: [integrations]
+      summary: Commit a previewed roster import (F4.5)
+      description: Inserts the previewed valid rows as participants (idempotent on (event, bib)).
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Import report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RosterImportReport' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/events/{id}/roster/imports/{importId}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+      - name: importId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    get:
+      operationId: getRosterImport
+      tags: [integrations]
+      summary: Roster import report (F4.5)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Import record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RosterImportReport' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /v1/orgs/{orgId}/integrations:
     parameters:
       - name: orgId
@@ -2108,6 +2180,56 @@ components:
       properties:
         ok: { type: boolean }
         error: { type: string }
+    RosterIssue:
+      type: object
+      required: [rowNumber, reason, detail]
+      properties:
+        rowNumber: { type: integer }
+        reason:
+          type: string
+          enum: [invalid_email, duplicate_bib, missing_bib, missing_name]
+        detail: { type: string }
+    RosterParticipant:
+      type: object
+      required: [rowNumber, bib, name, email, phone, team]
+      properties:
+        rowNumber: { type: integer }
+        bib: { type: string }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        team: { type: string, nullable: true }
+    RosterPreview:
+      type: object
+      required: [importId, columns, totalRows, validRows, skippedRows, sample, issues]
+      properties:
+        importId: { $ref: '#/components/schemas/Uuid' }
+        columns:
+          type: array
+          items: { type: string }
+        totalRows: { type: integer }
+        validRows: { type: integer }
+        skippedRows: { type: integer }
+        sample:
+          type: array
+          items: { $ref: '#/components/schemas/RosterParticipant' }
+        issues:
+          type: array
+          items: { $ref: '#/components/schemas/RosterIssue' }
+    RosterImportReport:
+      type: object
+      required: [importId, status, totalRows, importedRows, skippedRows, issues]
+      properties:
+        importId: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string }
+        filename: { type: string }
+        totalRows: { type: integer }
+        importedRows: { type: integer }
+        skippedRows: { type: integer }
+        createdAt: { type: string, format: date-time }
+        issues:
+          type: array
+          items: { $ref: '#/components/schemas/RosterIssue' }
     Money:
       type: object
       required: [cents, currency]

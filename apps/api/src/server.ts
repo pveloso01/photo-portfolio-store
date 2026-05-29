@@ -33,6 +33,7 @@ import photoQualityRoutes from './routes/photo-quality.js';
 import pricingRoutes from './routes/pricing.js';
 import productsRoutes from './routes/products.js';
 import refundsRoutes from './routes/refunds.js';
+import rosterRoutes from './routes/roster.js';
 import searchFaceRoutes from './routes/search-face.js';
 import searchRoutes from './routes/search.js';
 import takedownRoutes from './routes/takedowns.js';
@@ -145,6 +146,8 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   await app.register(meBiometricDataRoutes);
   // M4 F4.1 — per-org connector configuration (integrations:manage, org-scoped).
   await app.register(integrationsRoutes);
+  // M4 F4.5 — CSV roster import (event:write, event-scoped).
+  await app.register(rosterRoutes);
   // M2 F2.12 — internal cron-trigger for the weekly payout run (secret-gated).
   await app.register(internalPayoutsRoutes);
 

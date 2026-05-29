@@ -85,6 +85,13 @@
       "when": 1779993907438,
       "tag": "0011_integration_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780080307438,
+      "tag": "0012_participants_roster",
+      "breakpoints": true
     }
   ]
 }
